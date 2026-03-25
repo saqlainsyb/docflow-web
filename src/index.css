@@ -1,129 +1,337 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/manrope";
+@import "@fontsource-variable/inter";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   DOCFLOW DESIGN SYSTEM
+   
+   Architecture:
+   - All values use OKLCH for perceptual uniformity — consistent perceived
+     lightness across hues when adjusting L, predictable dark/light theming.
+   - --df-* tokens are the source of truth for all Docflow-specific values.
+   - Shadcn token names (--background, --primary etc.) are preserved and
+     overridden so every shadcn component works unchanged.
+   - Dark-first system. :root = dark. .light = light fallback.
+───────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+  /* ── Surface hierarchy ────────────────────────────────────────────────── */
+  /* Physical layers — lower number = deeper altitude. No borders between   */
+  /* sections — structural separation is achieved through color shifts only. */
+  --df-surface-lowest:          oklch(0.10 0.015 265); /* Deepest recess — inputs, wells  */
+  --df-surface-low:             oklch(0.16 0.015 265); /* Sidebar, inactive zones         */
+  --df-surface:                 oklch(0.18 0.015 265); /* Main board / document area      */
+  --df-surface-high:            oklch(0.21 0.015 265); /* Intermediate elevation           */
+  --df-surface-highest:         oklch(0.27 0.015 265); /* Modals, active toolbars, cards  */
 
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --df-on-surface:              oklch(0.91 0.015 265); /* Primary text                    */
+  --df-on-surface-variant:      oklch(0.63 0.015 265); /* Muted / metadata text           */
+  --df-on-surface-disabled:     oklch(0.42 0.015 265); /* Disabled / placeholder          */
 
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* ── Accent palette ───────────────────────────────────────────────────── */
+  --df-primary:                 oklch(0.82 0.14 198);  /* Electric cyan — CTAs, glows     */
+  --df-primary-container:       oklch(0.42 0.09 198);  /* Deep teal — gradient terminus   */
+  --df-secondary:               oklch(0.80 0.12 280);  /* Electric lavender — focus       */
+  --df-tertiary:                oklch(0.79 0.12 285);  /* Soft purple — presence pulse    */
+  --df-destructive:             oklch(0.65 0.22 25);   /* Error / danger                  */
+
+  /* ── Structural ───────────────────────────────────────────────────────── */
+  --df-outline-variant:         oklch(0.35 0.015 265); /* Ghost borders — 15% opacity only */
+  --df-surface-tint:            oklch(0.82 0.14 198 / 8%); /* Primary wash on surfaces   */
+
+  /* ── Gradients ────────────────────────────────────────────────────────── */
+  --df-gradient-cta:
+    linear-gradient(
+      135deg,
+      oklch(0.82 0.14 198) 0%,
+      oklch(0.42 0.09 198) 100%
+    );
+  --df-gradient-cta-hover:
+    linear-gradient(
+      135deg,
+      oklch(0.87 0.14 198) 0%,
+      oklch(0.48 0.09 198) 100%
+    );
+
+  /* ── Glow & shadow ────────────────────────────────────────────────────── */
+  /* Spec: ambient light feel — never standard drop shadows                 */
+  --df-glow-primary:            0 0 0 2px oklch(0.82 0.14 198 / 30%);
+  --df-glow-secondary:          0 0 10px 0 oklch(0.80 0.12 280 / 20%);
+  --df-shadow-ambient:          0 0 48px 0 oklch(0.91 0.015 265 / 6%);
+
+  /* ── Radius ───────────────────────────────────────────────────────────── */
+  --df-radius-sm:               0.25rem;  /* Inputs — integrated into surface */
+  --df-radius-md:               0.75rem;  /* Buttons — Power Cell spec        */
+  --df-radius-xl:               1.5rem;   /* Cards — premium tactile spec     */
+
+  /* ── Typography ───────────────────────────────────────────────────────── */
+  --df-font-display:            'Manrope Variable', sans-serif; /* Headings, wayfinding   */
+  --df-font-body:               'Inter Variable', sans-serif;   /* Body, labels, metadata */
+  --df-tracking-editorial:      0.05em;   /* label-md uppercase sub-text      */
+
+  /* ────────────────────────────────────────────────────────────────────────
+     SHADCN TOKEN OVERRIDES
+     Shadcn reads these exact names. We override values only — names stay.
+     Every shadcn component renders in the Docflow palette automatically.
+  ──────────────────────────────────────────────────────────────────────── */
+
+  --background:                 oklch(0.12 0.015 265); /* Base canvas — never pure black  */
+  --foreground:                 oklch(0.91 0.015 265);
+
+  --card:                       oklch(0.18 0.015 265); /* df-surface                      */
+  --card-foreground:            oklch(0.91 0.015 265);
+
+  --popover:                    oklch(0.27 0.015 265); /* df-surface-highest              */
+  --popover-foreground:         oklch(0.91 0.015 265);
+
+  --primary:                    oklch(0.82 0.14 198);
+  --primary-foreground:         oklch(0.10 0.015 265); /* Dark text on bright primary     */
+
+  --secondary:                  oklch(0.80 0.12 280);
+  --secondary-foreground:       oklch(0.12 0.015 265);
+
+  --muted:                      oklch(0.16 0.015 265); /* df-surface-low                  */
+  --muted-foreground:           oklch(0.63 0.015 265);
+
+  --accent:                     oklch(0.18 0.015 265);
+  --accent-foreground:          oklch(0.91 0.015 265);
+
+  --destructive:                oklch(0.65 0.22 25);
+
+  /* Ghost border — outline-variant at 15% per spec, never 100% opaque      */
+  --border:                     oklch(0.35 0.015 265 / 15%);
+  --input:                      oklch(0.10 0.015 265); /* df-surface-lowest               */
+  --ring:                       oklch(0.82 0.14 198 / 30%);
+
+  --radius:                     0.625rem;
+
+  /* Charts — tonal progression through the Docflow accent palette          */
+  --chart-1:                    oklch(0.82 0.14 198);  /* primary                         */
+  --chart-2:                    oklch(0.80 0.12 280);  /* secondary                       */
+  --chart-3:                    oklch(0.79 0.12 285);  /* tertiary                        */
+  --chart-4:                    oklch(0.42 0.09 198);  /* primary-container               */
+  --chart-5:                    oklch(0.35 0.015 265); /* outline-variant                 */
+
+  /* Sidebar — surface-low tier                                             */
+  --sidebar:                    oklch(0.16 0.015 265);
+  --sidebar-foreground:         oklch(0.91 0.015 265);
+  --sidebar-primary:            oklch(0.82 0.14 198);
+  --sidebar-primary-foreground: oklch(0.10 0.015 265);
+  --sidebar-accent:             oklch(0.18 0.015 265);
+  --sidebar-accent-foreground:  oklch(0.91 0.015 265);
+  --sidebar-border:             oklch(0.35 0.015 265 / 15%);
+  --sidebar-ring:               oklch(0.82 0.14 198 / 30%);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+/* ── Light mode fallback ──────────────────────────────────────────────────── */
+/* Dark-first system. Light is available but not the primary target.          */
+.light {
+  --df-surface-lowest:          oklch(1.00 0 0);       /* Pure white recess              */
+  --df-surface-low:             oklch(0.95 0.005 265);
+  --df-surface:                 oklch(0.97 0.005 265);
+  --df-surface-high:            oklch(0.92 0.005 265);
+  --df-surface-highest:         oklch(0.88 0.005 265);
+  --df-on-surface:              oklch(0.12 0.015 265);
+  --df-on-surface-variant:      oklch(0.42 0.015 265);
+  --df-on-surface-disabled:     oklch(0.63 0.015 265);
 
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background:                 oklch(0.97 0.005 265);
+  --foreground:                 oklch(0.12 0.015 265);
+  --card:                       oklch(1.00 0 0);
+  --card-foreground:            oklch(0.12 0.015 265);
+  --popover:                    oklch(1.00 0 0);
+  --popover-foreground:         oklch(0.12 0.015 265);
+  --primary:                    oklch(0.55 0.14 198);  /* Darker cyan for light bg        */
+  --primary-foreground:         oklch(1.00 0 0);
+  --secondary:                  oklch(0.50 0.12 280);  /* Darker lavender for light bg    */
+  --secondary-foreground:       oklch(1.00 0 0);
+  --muted:                      oklch(0.95 0.005 265);
+  --muted-foreground:           oklch(0.42 0.015 265);
+  --accent:                     oklch(0.95 0.005 265);
+  --accent-foreground:          oklch(0.12 0.015 265);
+  --destructive:                oklch(0.58 0.22 25);
+  --border:                     oklch(0.35 0.015 265 / 12%);
+  --input:                      oklch(0.95 0.005 265);
+  --ring:                       oklch(0.55 0.14 198 / 30%);
+  --sidebar:                    oklch(0.95 0.005 265);
+  --sidebar-foreground:         oklch(0.12 0.015 265);
+  --sidebar-primary:            oklch(0.55 0.14 198);
+  --sidebar-primary-foreground: oklch(1.00 0 0);
+  --sidebar-accent:             oklch(0.92 0.005 265);
+  --sidebar-accent-foreground:  oklch(0.12 0.015 265);
+  --sidebar-border:             oklch(0.35 0.015 265 / 12%);
+  --sidebar-ring:               oklch(0.55 0.14 198 / 30%);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAILWIND v4 THEME MAPPING
+   Registers all --df-* tokens as Tailwind utility values.
+   bg-surface-highest, text-on-surface-variant, shadow-ambient etc. all work.
+───────────────────────────────────────────────────────────────────────────── */
 
 @theme inline {
-  --font-sans: 'Geist Variable', sans-serif;
-  --font-heading: var(--font-sans);
+  /* Fonts */
+  --font-sans:                        'Inter Variable', sans-serif;
+  --font-display:                     'Manrope Variable', sans-serif;
+  --font-heading:                     var(--font-display);
 
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
+  /* Shadcn color mappings — required, do not remove */
+  --color-background:                 var(--background);
+  --color-foreground:                 var(--foreground);
+  --color-card:                       var(--card);
+  --color-card-foreground:            var(--card-foreground);
+  --color-popover:                    var(--popover);
+  --color-popover-foreground:         var(--popover-foreground);
+  --color-primary:                    var(--primary);
+  --color-primary-foreground:         var(--primary-foreground);
+  --color-secondary:                  var(--secondary);
+  --color-secondary-foreground:       var(--secondary-foreground);
+  --color-muted:                      var(--muted);
+  --color-muted-foreground:           var(--muted-foreground);
+  --color-accent:                     var(--accent);
+  --color-accent-foreground:          var(--accent-foreground);
+  --color-destructive:                var(--destructive);
+  --color-border:                     var(--border);
+  --color-input:                      var(--input);
+  --color-ring:                       var(--ring);
+  --color-chart-1:                    var(--chart-1);
+  --color-chart-2:                    var(--chart-2);
+  --color-chart-3:                    var(--chart-3);
+  --color-chart-4:                    var(--chart-4);
+  --color-chart-5:                    var(--chart-5);
+  --color-sidebar:                    var(--sidebar);
+  --color-sidebar-foreground:         var(--sidebar-foreground);
+  --color-sidebar-primary:            var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-accent:             var(--sidebar-accent);
+  --color-sidebar-accent-foreground:  var(--sidebar-accent-foreground);
+  --color-sidebar-border:             var(--sidebar-border);
+  --color-sidebar-ring:               var(--sidebar-ring);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Docflow surface utilities                                               */
+  /* bg-surface-lowest, bg-surface-low, bg-surface-high, bg-surface-highest */
+  --color-surface-lowest:             var(--df-surface-lowest);
+  --color-surface-low:                var(--df-surface-low);
+  --color-surface:                    var(--df-surface);
+  --color-surface-high:               var(--df-surface-high);
+  --color-surface-highest:            var(--df-surface-highest);
+
+  /* text-on-surface, text-on-surface-variant, text-on-surface-disabled     */
+  --color-on-surface:                 var(--df-on-surface);
+  --color-on-surface-variant:         var(--df-on-surface-variant);
+  --color-on-surface-disabled:        var(--df-on-surface-disabled);
+
+  /* Accent utilities — text-df-primary, bg-df-secondary etc.               */
+  --color-df-primary:                 var(--df-primary);
+  --color-df-primary-container:       var(--df-primary-container);
+  --color-df-secondary:               var(--df-secondary);
+  --color-df-tertiary:                var(--df-tertiary);
+  --color-df-destructive:             var(--df-destructive);
+  --color-outline-variant:            var(--df-outline-variant);
+  --color-surface-tint:               var(--df-surface-tint);
+
+  /* Radius — use rounded-md, rounded-xl etc. in components                 */
+  --radius-sm:                        var(--df-radius-sm);
+  --radius-md:                        var(--df-radius-md);
+  --radius-lg:                        var(--radius);
+  --radius-xl:                        var(--df-radius-xl);
+  --radius-2xl:                       calc(var(--radius) * 1.8);
+  --radius-3xl:                       calc(var(--radius) * 2.2);
+
+  /* Named shadows — shadow-ambient, shadow-glow-primary etc.               */
+  --shadow-ambient:                   var(--df-shadow-ambient);
+  --shadow-glow-primary:              var(--df-glow-primary);
+  --shadow-glow-secondary:            var(--df-glow-secondary);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DOCFLOW UTILITY CLASSES
+   Single-class abstractions for the design system's repeating patterns.
+   Use these instead of reconstructing patterns inline on every component.
+───────────────────────────────────────────────────────────────────────────── */
+
+@layer utilities {
+  /* Glass panel — floating elements over the board                         */
+  /* Spec: surface-variant 60% opacity + 20px backdrop-blur                */
+  .df-glass {
+    background-color: oklch(0.27 0.015 265 / 60%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  /* Gradient CTA — primary button background                              */
+  /* Spec: 135deg, primary → primary-container, never flat                 */
+  .df-gradient-cta {
+    background: var(--df-gradient-cta);
+  }
+  .df-gradient-cta:hover {
+    background: var(--df-gradient-cta-hover);
+  }
+
+  /* Focus glow — powered-on state for interactive elements                 */
+  /* Spec: 2px outer glow, primary at 30% opacity                          */
+  .df-glow-primary {
+    box-shadow: var(--df-glow-primary);
+  }
+
+  /* Input focus glow — secondary hue                                       */
+  /* Spec: 0 0 10px secondary at low opacity                               */
+  .df-glow-secondary {
+    box-shadow: var(--df-glow-secondary);
+  }
+
+  /* Ambient shadow — floating panels, context menus                        */
+  /* Spec: on-surface 6% opacity, 48px blur — feels like ambient light     */
+  .df-shadow-ambient {
+    box-shadow: var(--df-shadow-ambient);
+  }
+
+  /* Ghost border — accessibility fallback when color shift isn't enough    */
+  /* Spec: outline-variant at 15% only — never 100% opaque                 */
+  .df-ghost-border {
+    outline: 1px solid oklch(0.35 0.015 265 / 15%);
+  }
+
+  /* Surface tint — subtle primary wash on interactive hover states         */
+  .df-surface-tint {
+    background-color: var(--df-surface-tint);
+  }
+
+  /* Editorial label — uppercase sub-text tracking per spec                 */
+  /* Pair with a display-sm header for the high-end editorial look          */
+  .df-label-editorial {
+    font-family: var(--df-font-body);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: var(--df-tracking-editorial);
+    text-transform: uppercase;
+    color: var(--df-on-surface-variant);
+  }
+
+  /* Presence pulse — user avatar ring animation                            */
+  /* Spec: pulse animation using tertiary color                             */
+  .df-presence-pulse {
+    animation: df-presence-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes df-presence-pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 oklch(0.79 0.12 285 / 40%);
+    }
+    50% {
+      box-shadow: 0 0 0 6px oklch(0.79 0.12 285 / 0%);
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BASE LAYER
+───────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
   * {
@@ -132,10 +340,38 @@
     padding: 0;
     box-sizing: border-box;
   }
+
+  html {
+    @apply font-sans;
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
     @apply bg-background text-foreground;
   }
-  html {
-    @apply font-sans;
+
+  /* Display headings use Manrope — authoritative wayfinding per spec       */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--df-font-display);
+  }
+
+  /* Scrollbar — minimal, matches surface hierarchy                         */
+  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track  { background: var(--df-surface-lowest); }
+  ::-webkit-scrollbar-thumb  {
+    background: var(--df-outline-variant);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--df-on-surface-disabled);
+  }
+
+  /* Text selection — primary tint, keeps text legible                      */
+  ::selection {
+    background: oklch(0.82 0.14 198 / 20%);
+    color: var(--df-on-surface);
   }
 }

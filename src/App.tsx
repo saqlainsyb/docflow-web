@@ -10,6 +10,8 @@ import { AppLayout } from '@/layouts/AppLayout'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { BoardsPage } from '@/pages/workspace/BoardsPage'
+import { MembersPage } from '@/pages/workspace/MembersPage'
+import { SettingsPage } from '@/pages/workspace/SettingsPage'
 
 // ── Placeholder pages (replaced one module at a time) ─────────────────────────
 // Inline until each module is built. Never import a page that doesn't exist yet.
@@ -17,24 +19,6 @@ import { BoardsPage } from '@/pages/workspace/BoardsPage'
 const LoadingScreen = () => (
   <div className="flex h-screen w-screen items-center justify-center bg-background">
     <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-foreground" />
-  </div>
-)
-
-const MembersPage = () => (
-  <div className="p-8">
-    <p className="text-muted-foreground">Members — coming soon</p>
-  </div>
-)
-
-const SettingsPage = () => (
-  <div className="p-8">
-    <p className="text-muted-foreground">Settings — coming soon</p>
-  </div>
-)
-
-const BoardPage = () => (
-  <div className="p-8">
-    <p className="text-muted-foreground">Board — coming soon</p>
   </div>
 )
 
@@ -159,7 +143,7 @@ export default function App() {
         <Route path="/:workspaceId" element={<AppLayout />}>
           <Route index element={<Navigate to="boards" replace />} />
           <Route path="boards" element={<BoardsPage />} />
-          <Route path="boards/:boardId" element={<BoardPage />} />
+          <Route path="boards/:boardId" element={<BoardsPage />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

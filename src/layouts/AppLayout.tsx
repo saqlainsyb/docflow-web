@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from '@/components/sidebar/Sidebar'
+import { ModalManager } from '@/components/modals/ModalManager'
 
 /**
  * AppLayout
@@ -19,6 +20,8 @@ import { Sidebar } from '@/components/sidebar/Sidebar'
  * - Topbar (breadcrumbs, search, CTAs) lives inside each page — not here.
  *   Pages are fully self-contained. Nothing is prop-drilled through this shell.
  * - Sidebar handles its own workspace context via Redux selectors.
+ * - ModalManager sits here so any authenticated component can trigger a modal
+ *   via dispatch(openModal(...)) without prop drilling.
  */
 export function AppLayout() {
   return (
@@ -27,6 +30,8 @@ export function AppLayout() {
       <main className="ml-64 min-h-screen">
         <Outlet />
       </main>
+      {/* Global modal renderer — reads activeModal from Redux UI slice */}
+      <ModalManager />
     </div>
   )
 }

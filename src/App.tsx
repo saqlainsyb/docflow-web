@@ -2,6 +2,9 @@ import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { useAuthBootstrap } from '@/hooks/useAuthBootstrap'
 import { useAppSelector } from '@/store/hooks'
 
+import { LoginPage } from '@/pages/auth/LoginPage'
+import { RegisterPage } from '@/pages/auth/RegisterPage'
+
 // ── Page imports (placeholders until we build each module) ────────────────────
 // Each of these will be replaced with real implementations one at a time.
 // They're defined inline here so the router compiles immediately.
@@ -9,18 +12,6 @@ import { useAppSelector } from '@/store/hooks'
 const LoadingScreen = () => (
   <div className="flex h-screen w-screen items-center justify-center bg-background">
     <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-foreground" />
-  </div>
-)
-
-const LoginPage = () => (
-  <div className="flex h-screen items-center justify-center">
-    <p className="text-muted-foreground">Login page — coming soon</p>
-  </div>
-)
-
-const RegisterPage = () => (
-  <div className="flex h-screen items-center justify-center">
-    <p className="text-muted-foreground">Register page — coming soon</p>
   </div>
 )
 

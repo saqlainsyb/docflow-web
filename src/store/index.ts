@@ -1,14 +1,5 @@
 import { configureStore, createSlice, type PayloadAction } from '@reduxjs/toolkit'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface User {
-  id: string
-  email: string
-  name: string
-  avatar_url: string | null
-  created_at: string
-}
+import type { User } from '@/lib/types'
 
 // ── Auth Slice ────────────────────────────────────────────────────────────────
 // Owns: access token (memory only, 15min TTL) + authenticated user.

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import api from '@/lib/api'
 import { useAppDispatch } from '@/store/hooks'
 import { setCredentials, clearCredentials } from '@/store'
-import type { User } from '@/store'
+import type { User } from '@/lib/types'
 
 // ── useAuthBootstrap ──────────────────────────────────────────────────────────
 // Called once in App.tsx before any route renders.

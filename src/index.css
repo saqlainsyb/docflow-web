@@ -28,21 +28,39 @@
   --df-surface-high:            oklch(0.21 0.015 265); /* Intermediate elevation           */
   --df-surface-highest:         oklch(0.27 0.015 265); /* Modals, active toolbars, cards  */
 
+  /* ── Surface container scale ─────────────────────────────────────────── */
+  /* Named after MD3 container tokens. Maps to Docflow surface hierarchy.   */
+  /* Use these on components that sit *within* a surface (cards, rows, etc) */
+  --df-surface-container-lowest:  oklch(0.10 0.015 265); /* = surface-lowest              */
+  --df-surface-container-low:     oklch(0.16 0.015 265); /* = surface-low — sidebar bg    */
+  --df-surface-container:         oklch(0.18 0.015 265); /* = surface — default container */
+  --df-surface-container-high:    oklch(0.21 0.015 265); /* = surface-high — hover state  */
+  --df-surface-container-highest: oklch(0.27 0.015 265); /* = surface-highest — active    */
+
   /* ── Text ─────────────────────────────────────────────────────────────── */
   --df-on-surface:              oklch(0.91 0.015 265); /* Primary text                    */
   --df-on-surface-variant:      oklch(0.63 0.015 265); /* Muted / metadata text           */
   --df-on-surface-disabled:     oklch(0.42 0.015 265); /* Disabled / placeholder          */
 
+  /* ── Structural ───────────────────────────────────────────────────────── */
+  /* outline: visible muted text — icon labels, timestamps, secondary copy  */
+  /* outline-variant: ghost borders — structural dividers at low opacity    */
+  --df-outline:                 oklch(0.56 0.012 265); /* Muted — icon color, meta text   */
+  --df-outline-variant:         oklch(0.35 0.015 265); /* Ghost borders — 15% opacity only */
+  --df-surface-tint:            oklch(0.82 0.14 198 / 8%); /* Primary wash on surfaces   */
+
   /* ── Accent palette ───────────────────────────────────────────────────── */
   --df-primary:                 oklch(0.82 0.14 198);  /* Electric cyan — CTAs, glows     */
   --df-primary-container:       oklch(0.42 0.09 198);  /* Deep teal — gradient terminus   */
+  --df-primary-fixed-dim:       oklch(0.82 0.14 198);  /* Alias — bright cyan on dark bg  */
   --df-secondary:               oklch(0.80 0.12 280);  /* Electric lavender — focus       */
-  --df-tertiary:                oklch(0.79 0.12 285);  /* Soft purple — presence pulse    */
-  --df-destructive:             oklch(0.65 0.22 25);   /* Error / danger                  */
 
-  /* ── Structural ───────────────────────────────────────────────────────── */
-  --df-outline-variant:         oklch(0.35 0.015 265); /* Ghost borders — 15% opacity only */
-  --df-surface-tint:            oklch(0.82 0.14 198 / 8%); /* Primary wash on surfaces   */
+  /* ── Tertiary — presence, user avatars, role badges ──────────────────── */
+  --df-tertiary:                oklch(0.79 0.12 285);  /* Soft purple — presence pulse    */
+  --df-tertiary-container:      oklch(0.38 0.16 285);  /* Deep purple — avatar bg         */
+  --df-on-tertiary-container:   oklch(0.88 0.08 285);  /* Light lavender — avatar text    */
+
+  --df-destructive:             oklch(0.65 0.22 25);   /* Error / danger                  */
 
   /* ── Gradients ────────────────────────────────────────────────────────── */
   --df-gradient-cta:
@@ -136,9 +154,22 @@
   --df-surface:                 oklch(0.97 0.005 265);
   --df-surface-high:            oklch(0.92 0.005 265);
   --df-surface-highest:         oklch(0.88 0.005 265);
+
+  --df-surface-container-lowest:  oklch(1.00 0 0);
+  --df-surface-container-low:     oklch(0.95 0.005 265);
+  --df-surface-container:         oklch(0.97 0.005 265);
+  --df-surface-container-high:    oklch(0.92 0.005 265);
+  --df-surface-container-highest: oklch(0.88 0.005 265);
+
   --df-on-surface:              oklch(0.12 0.015 265);
   --df-on-surface-variant:      oklch(0.42 0.015 265);
   --df-on-surface-disabled:     oklch(0.63 0.015 265);
+
+  --df-outline:                 oklch(0.52 0.012 265);
+  --df-outline-variant:         oklch(0.80 0.010 265);
+
+  --df-tertiary-container:      oklch(0.88 0.08 285);
+  --df-on-tertiary-container:   oklch(0.28 0.16 285);
 
   --background:                 oklch(0.97 0.005 265);
   --foreground:                 oklch(0.12 0.015 265);
@@ -221,18 +252,31 @@
   --color-surface-high:               var(--df-surface-high);
   --color-surface-highest:            var(--df-surface-highest);
 
+  /* Surface container scale — bg-surface-container, bg-surface-container-high etc. */
+  --color-surface-container-lowest:   var(--df-surface-container-lowest);
+  --color-surface-container-low:      var(--df-surface-container-low);
+  --color-surface-container:          var(--df-surface-container);
+  --color-surface-container-high:     var(--df-surface-container-high);
+  --color-surface-container-highest:  var(--df-surface-container-highest);
+
   /* text-on-surface, text-on-surface-variant, text-on-surface-disabled     */
   --color-on-surface:                 var(--df-on-surface);
   --color-on-surface-variant:         var(--df-on-surface-variant);
   --color-on-surface-disabled:        var(--df-on-surface-disabled);
 
+  /* Structural — text-outline, border-outline-variant                      */
+  --color-outline:                    var(--df-outline);
+  --color-outline-variant:            var(--df-outline-variant);
+
   /* Accent utilities — text-df-primary, bg-df-secondary etc.               */
   --color-df-primary:                 var(--df-primary);
   --color-df-primary-container:       var(--df-primary-container);
+  --color-df-primary-fixed-dim:       var(--df-primary-fixed-dim);
   --color-df-secondary:               var(--df-secondary);
   --color-df-tertiary:                var(--df-tertiary);
+  --color-df-tertiary-container:      var(--df-tertiary-container);
+  --color-df-on-tertiary-container:   var(--df-on-tertiary-container);
   --color-df-destructive:             var(--df-destructive);
-  --color-outline-variant:            var(--df-outline-variant);
   --color-surface-tint:               var(--df-surface-tint);
 
   /* Radius — use rounded-md, rounded-xl etc. in components                 */
@@ -271,6 +315,15 @@
   }
   .df-gradient-cta:hover {
     background: var(--df-gradient-cta-hover);
+  }
+
+  /* Gradient logo icon — same hue as CTA, used on the sidebar logo badge  */
+  .df-gradient-logo {
+    background: linear-gradient(
+      135deg,
+      oklch(0.82 0.14 198) 0%,
+      oklch(0.42 0.09 198) 100%
+    );
   }
 
   /* Focus glow — powered-on state for interactive elements                 */

@@ -27,8 +27,7 @@ import {
   ArrowRight,
   Loader2,
 } from 'lucide-react'
-import { useAppDispatch } from '@/store/hooks'
-import { useAppSelector } from '@/store/hooks'
+import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { openModal } from '@/store'
 import { useWorkspace } from '@/hooks/useWorkspace'
 import { cn } from '@/lib/utils'
@@ -257,7 +256,7 @@ function CreateBoardCard({ onClick }: { onClick: () => void }) {
         'transition-all duration-200',
         'hover:border-primary/50 hover:bg-primary/5',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-        'min-h-[180px]',
+        'min-h-45',
       )}
       aria-label="Create new board"
     >

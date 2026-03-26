@@ -34,6 +34,12 @@ const NotFoundPage = () => (
   </div>
 )
 
+const BoardPage = () => (
+  <div className="p-8">
+    <p className="text-muted-foreground">Board — coming soon</p>
+  </div>
+)
+
 // ── ProtectedRoute ────────────────────────────────────────────────────────────
 // Wraps all routes that require authentication.
 // Redirects to /login with { from: location } state so the login page can
@@ -143,7 +149,7 @@ export default function App() {
         <Route path="/:workspaceId" element={<AppLayout />}>
           <Route index element={<Navigate to="boards" replace />} />
           <Route path="boards" element={<BoardsPage />} />
-          <Route path="boards/:boardId" element={<BoardsPage />} />
+          <Route path="boards/:boardId" element={<BoardPage />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

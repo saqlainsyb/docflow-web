@@ -56,6 +56,7 @@ import {
 } from '@/lib/validations'
 import type { ApiErrorCode, MemberResponse, WorkspaceRole } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { getInitials } from '@/lib/utils'
 
 // ── Error mapping ─────────────────────────────────────────────────────────────
 
@@ -97,13 +98,6 @@ const ROLE_CONFIG: Record<
     icon: User,
     className: 'bg-surface-container-highest text-outline',
   },
-}
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  if (parts.length === 0 || parts[0] === '') return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
 // ── MembersTopbar ─────────────────────────────────────────────────────────────

@@ -83,7 +83,7 @@ api.interceptors.response.use(
     // ── Token expired — attempt silent refresh ────────────────────────────
     // Only retry once (_retried flag) to prevent infinite loops if the
     // refresh itself keeps returning TOKEN_EXPIRED.
-    if (status === 401 && code === 'TOKEN_EXPIRED' && !originalRequest._retried) {
+    if (status === 401 && (code === 'TOKEN_EXPIRED' || code === 'MISSING_TOKEN') && !originalRequest._retried) {
       originalRequest._retried = true
 
       try {

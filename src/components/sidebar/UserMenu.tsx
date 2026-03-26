@@ -12,17 +12,7 @@ import { useAppSelector } from '@/store/hooks'
 import { useLogout } from '@/hooks/useLogout'
 import { useWorkspace } from '@/hooks/useWorkspace'
 import { cn } from '@/lib/utils'
-
-/**
- * Derives up to two uppercase initials from a display name.
- * "Jane Doe" → "JD", "Alice" → "AL", "" → "?"
- */
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  if (parts.length === 0 || parts[0] === '') return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
+import { getInitials } from '@/lib/utils'
 
 /**
  * Maps a WorkspaceRole to a display-friendly capitalised string.

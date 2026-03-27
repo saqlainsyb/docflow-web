@@ -1,6 +1,5 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from '@/components/sidebar/Sidebar'
-import { ModalManager } from '@/components/modals/ModalManager'
 
 /**
  * AppLayout
@@ -30,8 +29,6 @@ export function AppLayout() {
       <main className="ml-64 min-h-screen">
         <Outlet />
       </main>
-      {/* Global modal renderer — reads activeModal from Redux UI slice */}
-      <ModalManager />
     </div>
   )
 }

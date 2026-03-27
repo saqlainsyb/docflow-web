@@ -6,6 +6,7 @@ import { useAuthBootstrap } from "@/hooks/useAuthBootstrap";
 import { useAppSelector } from "@/store/hooks";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { AppLayout } from "@/layouts/AppLayout";
+import { ModalManager } from '@/components/modals/ModalManager'
 
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { RegisterPage } from "@/pages/auth/RegisterPage";
@@ -48,7 +49,14 @@ function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return <Outlet />;
+  // ModalManager lives here — mounted for all authenticated routes,
+  // including BoardPage which lives outside AppLayout
+  return (
+    <>
+      <Outlet />
+      <ModalManager />
+    </>
+  )
 }
 
 // ── GuestRoute ────────────────────────────────────────────────────────────────

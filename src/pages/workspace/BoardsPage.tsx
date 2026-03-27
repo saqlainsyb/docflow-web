@@ -5,12 +5,12 @@
 //
 // Data:
 //   - Workspace name + member role: useWorkspace(workspaceId)
-//   - Board list: stub for now — replaced with useWorkspaceBoards in Module 5
+//   - Board list: useWorkspaceBoards(workspaceId) — sorted newest-first
 //
 // Sub-components (page-scoped, not exported):
 //   BoardsTopbar  — workspace name, breadcrumb, search, CTA buttons
 //   BoardsGrid    — board cards + "create new" card
-//   BoardCard     — individual board card
+//   BoardCard     — individual board card (navigates to /:wsId/boards/:boardId)
 //   EmptyBoards   — shown when workspace has no boards yet
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -30,20 +30,11 @@ import {
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { openModal } from '@/store'
 import { useWorkspace } from '@/hooks/useWorkspace'
+import { useWorkspaceBoards } from '@/hooks/useWorkspaceBoards'
 import { cn } from '@/lib/utils'
-import type { WorkspaceRole } from '@/lib/types'
+import type { BoardListItem, WorkspaceRole } from '@/lib/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-// TODO: replace with BoardListItem from types.ts in Module 5
-// when GET /workspaces/:id/boards is implemented
-interface BoardStub {
-  id: string
-  title: string
-  visibility: 'workspace' | 'private'
-  updatedAt: string
-  memberCount: number
-}
 
 type ViewMode = 'grid' | 'list'
 
@@ -53,11 +44,26 @@ function canManageBoards(role: WorkspaceRole | undefined): boolean {
   return role === 'owner' || role === 'admin'
 }
 
+function formatUpdatedAt(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const minutes = Math.floor(diff / 60_000)
+  const hours = Math.floor(diff / 3_600_000)
+  const days = Math.floor(diff / 86_400_000)
+
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  if (days === 1) return '1d ago'
+  return `${days}d ago`
+}
+
 // ── BoardsTopbar ──────────────────────────────────────────────────────────────
 
 interface BoardsTopbarProps {
   workspaceName: string
   canManage: boolean
+  search: string
+  onSearchChange: (v: string) => void
   onInvite: () => void
   onCreateBoard: () => void
 }
@@ -65,6 +71,8 @@ interface BoardsTopbarProps {
 function BoardsTopbar({
   workspaceName,
   canManage,
+  search,
+  onSearchChange,
   onInvite,
   onCreateBoard,
 }: BoardsTopbarProps) {
@@ -85,14 +93,13 @@ function BoardsTopbar({
       <div className="flex-1 max-w-md mx-8">
         <div className="relative group">
           <Search
-            className={cn(
-              'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4',
-              'text-outline group-focus-within:text-primary transition-colors',
-            )}
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline group-focus-within:text-primary transition-colors"
             aria-hidden="true"
           />
           <input
             type="text"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search boards…"
             className={cn(
               'w-full bg-surface-container-lowest rounded-full',
@@ -145,38 +152,36 @@ function BoardsTopbar({
 // ── BoardCard ─────────────────────────────────────────────────────────────────
 
 interface BoardCardProps {
-  board: BoardStub
+  board: BoardListItem
+  onClick: () => void
 }
 
-// Icon + accent color cycling — boards cycle through primary/secondary/tertiary
-// based on their index. Full icon selection comes in Module 5 when board
-// metadata includes an icon field.
 const BOARD_ACCENTS = [
   { bg: 'bg-primary/10', text: 'text-primary', arrow: 'group-hover:text-primary' },
   { bg: 'bg-secondary/10', text: 'text-secondary', arrow: 'group-hover:text-secondary' },
   { bg: 'bg-df-tertiary/10', text: 'text-df-tertiary', arrow: 'group-hover:text-df-tertiary' },
 ] as const
 
-function BoardCard({ board }: BoardCardProps) {
-  // Stable accent derived from board ID — won't shift on re-renders
-  const accentIndex =
-    board.id.charCodeAt(0) % BOARD_ACCENTS.length
+function BoardCard({ board, onClick }: BoardCardProps) {
+  const accentIndex = board.id.charCodeAt(0) % BOARD_ACCENTS.length
   const accent = BOARD_ACCENTS[accentIndex]
 
   return (
     <article
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick() }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open board: ${board.title}`}
       className={cn(
         'group relative flex flex-col bg-surface-container rounded-2xl p-6',
         'ring-1 ring-outline-variant/5',
-        'transition-all duration-200',
+        'transition-all duration-200 cursor-pointer',
         'hover:-translate-y-1 hover:bg-surface-container-high hover:ring-primary/20',
-        'cursor-pointer focus-within:ring-primary/20',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
       )}
-      tabIndex={0}
-      aria-label={`Open board: ${board.title}`}
-      // TODO: onClick navigate to /:workspaceId/boards/:boardId in Module 5
     >
-      {/* Top row — icon + overflow menu */}
+      {/* Top row — icon */}
       <div className="flex items-start justify-between mb-4">
         <div
           className={cn(
@@ -200,42 +205,45 @@ function BoardCard({ board }: BoardCardProps) {
       {/* Meta — visibility badge + timestamp */}
       <div className="flex items-center gap-2 mb-6">
         {board.visibility === 'workspace' ? (
-          <span
-            className={cn(
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded',
-              'text-[10px] font-bold uppercase tracking-wider',
-              'bg-primary/10 text-df-primary-fixed-dim',
-            )}
-          >
+          <span className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded',
+            'text-[10px] font-bold uppercase tracking-wider',
+            'bg-primary/10 text-df-primary-fixed-dim',
+          )}>
             <Users className="w-2.5 h-2.5" aria-hidden="true" />
             Workspace
           </span>
         ) : (
-          <span
-            className={cn(
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded',
-              'text-[10px] font-bold uppercase tracking-wider',
-              'bg-surface-container-highest text-outline',
-            )}
-          >
+          <span className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded',
+            'text-[10px] font-bold uppercase tracking-wider',
+            'bg-surface-container-highest text-outline',
+          )}>
             <Lock className="w-2.5 h-2.5" aria-hidden="true" />
             Private
           </span>
         )}
-        <span className="text-xs text-outline">· {board.updatedAt}</span>
+        <span className="text-xs text-outline">
+          · Updated {formatUpdatedAt(board.updated_at)}
+        </span>
       </div>
 
-      {/* Footer — member count + arrow */}
+      {/* Footer — member count + card count + arrow */}
       <div className="flex items-center justify-between pt-4 border-t border-outline-variant/10 mt-auto">
-        <div className="flex items-center gap-1.5 text-xs text-outline">
-          <Users className="w-3.5 h-3.5" aria-hidden="true" />
-          <span>{board.memberCount} member{board.memberCount !== 1 ? 's' : ''}</span>
+        <div className="flex items-center gap-3 text-xs text-outline">
+          <span className="flex items-center gap-1">
+            <Users className="w-3.5 h-3.5" aria-hidden="true" />
+            {board.member_count} member{board.member_count !== 1 ? 's' : ''}
+          </span>
+          {board.card_count > 0 && (
+            <>
+              <span className="text-outline/30">·</span>
+              <span>{board.card_count} card{board.card_count !== 1 ? 's' : ''}</span>
+            </>
+          )}
         </div>
         <ArrowRight
-          className={cn(
-            'w-4 h-4 text-outline transition-colors duration-150',
-            accent.arrow,
-          )}
+          className={cn('w-4 h-4 text-outline transition-colors duration-150', accent.arrow)}
           aria-hidden="true"
         />
       </div>
@@ -260,14 +268,12 @@ function CreateBoardCard({ onClick }: { onClick: () => void }) {
       )}
       aria-label="Create new board"
     >
-      <div
-        className={cn(
-          'w-12 h-12 rounded-full flex items-center justify-center',
-          'bg-surface-container-highest text-outline',
-          'transition-all duration-200',
-          'group-hover:bg-primary/20 group-hover:text-primary',
-        )}
-      >
+      <div className={cn(
+        'w-12 h-12 rounded-full flex items-center justify-center',
+        'bg-surface-container-highest text-outline',
+        'transition-all duration-200',
+        'group-hover:bg-primary/20 group-hover:text-primary',
+      )}>
         <Plus className="w-6 h-6" aria-hidden="true" />
       </div>
       <p className="font-display font-bold text-lg text-outline group-hover:text-on-surface transition-colors">
@@ -282,12 +288,7 @@ function CreateBoardCard({ onClick }: { onClick: () => void }) {
 function EmptyBoards({ onCreateBoard }: { onCreateBoard: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-6">
-      <div
-        className={cn(
-          'w-16 h-16 rounded-2xl flex items-center justify-center',
-          'bg-primary/10',
-        )}
-      >
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-primary/10">
         <LayoutDashboard className="w-8 h-8 text-primary" aria-hidden="true" />
       </div>
       <div className="text-center space-y-2">
@@ -318,26 +319,29 @@ function EmptyBoards({ onCreateBoard }: { onCreateBoard: () => void }) {
 // ── BoardsGrid ────────────────────────────────────────────────────────────────
 
 interface BoardsGridProps {
-  boards: BoardStub[]
+  boards: BoardListItem[]
   viewMode: ViewMode
   onCreateBoard: () => void
+  onBoardClick: (boardId: string) => void
 }
 
-function BoardsGrid({ boards, viewMode, onCreateBoard }: BoardsGridProps) {
+function BoardsGrid({ boards, viewMode, onCreateBoard, onBoardClick }: BoardsGridProps) {
   if (boards.length === 0) {
     return <EmptyBoards onCreateBoard={onCreateBoard} />
   }
 
   return (
-    <div
-      className={cn(
-        viewMode === 'grid'
-          ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
-          : 'flex flex-col gap-3',
-      )}
-    >
+    <div className={cn(
+      viewMode === 'grid'
+        ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+        : 'flex flex-col gap-3',
+    )}>
       {boards.map((board) => (
-        <BoardCard key={board.id} board={board} />
+        <BoardCard
+          key={board.id}
+          board={board}
+          onClick={() => onBoardClick(board.id)}
+        />
       ))}
       <CreateBoardCard onClick={onCreateBoard} />
     </div>
@@ -352,20 +356,28 @@ export function BoardsPage() {
   const dispatch = useAppDispatch()
   const user = useAppSelector((state) => state.auth.user)
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [search, setSearch] = useState('')
 
-  const { data: workspace, isLoading } = useWorkspace(workspaceId)
+  const { data: workspace, isLoading: isWorkspaceLoading } = useWorkspace(workspaceId)
+  const { data: boards = [], isLoading: isBoardsLoading } = useWorkspaceBoards(workspaceId)
 
-  // Derive current user's role from the workspace members array
   const currentMember = workspace?.members.find((m) => m.user_id === user?.id)
   const canManage = canManageBoards(currentMember?.role)
 
-  // TODO: replace with useWorkspaceBoards(workspaceId) in Module 5
-  // Stub boards so the grid renders with real structure during development
-  const boards: BoardStub[] = []
+  // Client-side search filter — case-insensitive title match
+  const filteredBoards = search.trim()
+    ? boards.filter((b) =>
+        b.title.toLowerCase().includes(search.trim().toLowerCase()),
+      )
+    : boards
 
   function handleCreateBoard() {
     if (!workspaceId) return
     dispatch(openModal({ type: 'createBoard', workspaceId }))
+  }
+
+  function handleBoardClick(boardId: string) {
+    navigate(`/${workspaceId}/boards/${boardId}`)
   }
 
   function handleInvite() {
@@ -373,7 +385,7 @@ export function BoardsPage() {
   }
 
   // ── Loading state ───────────────────────────────────────────────────────────
-  if (isLoading) {
+  if (isWorkspaceLoading || isBoardsLoading) {
     return (
       <div className="flex h-full min-h-screen items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-outline" />
@@ -387,6 +399,8 @@ export function BoardsPage() {
       <BoardsTopbar
         workspaceName={workspace?.name ?? ''}
         canManage={canManage}
+        search={search}
+        onSearchChange={setSearch}
         onInvite={handleInvite}
         onCreateBoard={handleCreateBoard}
       />
@@ -443,11 +457,12 @@ export function BoardsPage() {
             </div>
           </div>
 
-          {/* Board grid / empty state */}
+          {/* Boards grid / list */}
           <BoardsGrid
-            boards={boards}
+            boards={filteredBoards}
             viewMode={viewMode}
             onCreateBoard={handleCreateBoard}
+            onBoardClick={handleBoardClick}
           />
 
         </div>

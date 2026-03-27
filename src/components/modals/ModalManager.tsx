@@ -1,53 +1,43 @@
 // src/components/modals/ModalManager.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Global modal renderer. Reads activeModal from the Redux UI slice and
-// renders exactly one modal at a time.
+// Reads activeModal from Redux and renders the correct modal component.
+// Lives in AppLayout so it's always mounted while the user is authenticated.
 //
-// Lives in AppLayout — always mounted when the user is authenticated.
-// Never needs to be rendered anywhere else.
-//
-// Adding a new modal (Modules 5–8):
-//   1. Create src/components/modals/YourModal.tsx
-//   2. Add a case to the switch below
-//   3. Done — nothing else changes
-//
-// Why Redux for modal state (not local state / context):
-//   Any component in the tree can trigger any modal by dispatching openModal().
-//   The sidebar, a page header, a card — all can open the same modal without
-//   prop drilling or shared context setup. The modal manager is the single
-//   consumer; everyone else is just a producer.
+// Adding a new modal:
+//   1. Add the type to the Modal union in store/index.ts
+//   2. Import the component here
+//   3. Add a case to the switch below
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useAppSelector } from '@/store/hooks'
 import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal'
+import { CreateBoardModal } from '@/components/modals/CreateBoardModal'
+import { CreateColumnModal } from '@/components/modals/CreateColumnModal'
+import { CreateCardModal } from '@/components/modals/CreateCardModal'
 
 export function ModalManager() {
   const activeModal = useAppSelector((state) => state.ui.activeModal)
 
-  // Early return when no modal is active — nothing to render
   if (!activeModal) return null
 
   switch (activeModal.type) {
     case 'createWorkspace':
-      return <CreateWorkspaceModal open />
+      return <CreateWorkspaceModal />
 
-    // ── Module 5 ──────────────────────────────────────────────────────────
-    // case 'createBoard':
-    //   return <CreateBoardModal open workspaceId={activeModal.workspaceId} />
+    case 'createBoard':
+      return <CreateBoardModal workspaceId={activeModal.workspaceId} />
 
-    // ── Module 5 (board view) ─────────────────────────────────────────────
-    // case 'createColumn':
-    //   return <CreateColumnModal open boardId={activeModal.boardId} />
+    case 'createColumn':
+      return <CreateColumnModal boardId={activeModal.boardId} />
 
-    // case 'createCard':
-    //   return <CreateCardModal open columnId={activeModal.columnId} />
+    case 'createCard':
+      return <CreateCardModal columnId={activeModal.columnId} />
 
-    // case 'editCard':
-    //   return <EditCardModal open cardId={activeModal.cardId} />
+    case 'editCard':
+      // Module 6 — TipTap document editor
+      return null
 
     default:
-      // Exhaustive check — TypeScript will error here if a new Modal
-      // union member is added to the store without a matching case
       return null
   }
 }

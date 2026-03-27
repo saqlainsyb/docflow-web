@@ -1,17 +1,18 @@
-import { Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom'
-import { useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
+import { Routes, Route, Navigate, Outlet, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import { useEffect } from "react";
 
-import { useAuthBootstrap } from '@/hooks/useAuthBootstrap'
-import { useAppSelector } from '@/store/hooks'
-import { useWorkspaces } from '@/hooks/useWorkspaces'
-import { AppLayout } from '@/layouts/AppLayout'
+import { useAuthBootstrap } from "@/hooks/useAuthBootstrap";
+import { useAppSelector } from "@/store/hooks";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
+import { AppLayout } from "@/layouts/AppLayout";
 
-import { LoginPage } from '@/pages/auth/LoginPage'
-import { RegisterPage } from '@/pages/auth/RegisterPage'
-import { BoardsPage } from '@/pages/workspace/BoardsPage'
-import { MembersPage } from '@/pages/workspace/MembersPage'
-import { SettingsPage } from '@/pages/workspace/SettingsPage'
+import { LoginPage } from "@/pages/auth/LoginPage";
+import { RegisterPage } from "@/pages/auth/RegisterPage";
+import { BoardsPage } from "@/pages/workspace/BoardsPage";
+import { MembersPage } from "@/pages/workspace/MembersPage";
+import { SettingsPage } from "@/pages/workspace/SettingsPage";
+import { BoardPage } from "@/pages/workspace/BoardPage"
 
 // ── Placeholder pages (replaced one module at a time) ─────────────────────────
 // Inline until each module is built. Never import a page that doesn't exist yet.
@@ -20,25 +21,19 @@ const LoadingScreen = () => (
   <div className="flex h-screen w-screen items-center justify-center bg-background">
     <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-foreground" />
   </div>
-)
+);
 
 const PublicBoardPage = () => (
   <div className="p-8">
     <p className="text-muted-foreground">Public board — coming soon</p>
   </div>
-)
+);
 
 const NotFoundPage = () => (
   <div className="flex h-screen items-center justify-center">
     <p className="text-muted-foreground">404 — page not found</p>
   </div>
-)
-
-const BoardPage = () => (
-  <div className="p-8">
-    <p className="text-muted-foreground">Board — coming soon</p>
-  </div>
-)
+);
 
 // ── ProtectedRoute ────────────────────────────────────────────────────────────
 // Wraps all routes that require authentication.
@@ -46,14 +41,14 @@ const BoardPage = () => (
 // bounce the user back after successful authentication.
 
 function ProtectedRoute() {
-  const user = useAppSelector((state) => state.auth.user)
-  const location = useLocation()
+  const user = useAppSelector((state) => state.auth.user);
+  const location = useLocation();
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return <Outlet />
+  return <Outlet />;
 }
 
 // ── GuestRoute ────────────────────────────────────────────────────────────────
@@ -61,13 +56,13 @@ function ProtectedRoute() {
 // Logged-in users are sent to / which RootRedirect handles.
 
 function GuestRoute() {
-  const user = useAppSelector((state) => state.auth.user)
+  const user = useAppSelector((state) => state.auth.user);
 
   if (user) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/" replace />;
   }
 
-  return <Outlet />
+  return <Outlet />;
 }
 
 // ── RootRedirect ──────────────────────────────────────────────────────────────
@@ -86,19 +81,19 @@ function GuestRoute() {
 //               but we guard against it gracefully
 
 function RootRedirect() {
-  const navigate = useNavigate()
-  const { data: workspaces, isLoading } = useWorkspaces()
+  const navigate = useNavigate();
+  const { data: workspaces, isLoading } = useWorkspaces();
 
   useEffect(() => {
-    if (!workspaces) return
+    if (!workspaces) return;
     if (workspaces.length > 0) {
-      navigate(`/${workspaces[0].id}/boards`, { replace: true })
+      navigate(`/${workspaces[0].id}/boards`, { replace: true });
     }
     // Edge case: no workspaces — stay on / and let the user create one.
     // The workspace creation modal can be triggered from here in a future pass.
-  }, [workspaces, navigate])
+  }, [workspaces, navigate]);
 
-  if (isLoading) return <LoadingScreen />
+  if (isLoading) return <LoadingScreen />;
 
   // Workspaces loaded but empty — show a minimal prompt
   // (this path should never be hit in V1 since register auto-creates one)
@@ -106,18 +101,18 @@ function RootRedirect() {
     <div className="flex h-screen w-screen items-center justify-center bg-background">
       <p className="text-muted-foreground text-sm">No workspaces found.</p>
     </div>
-  )
+  );
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const { isBootstrapping } = useAuthBootstrap()
+  const { isBootstrapping } = useAuthBootstrap();
 
   // Block all rendering until we know the auth state.
   // Prevents the /login redirect flash for users who are already authenticated.
   if (isBootstrapping) {
-    return <LoadingScreen />
+    return <LoadingScreen />;
   }
 
   return (
@@ -134,7 +129,6 @@ export default function App() {
 
       {/* ── Protected routes ────────────────────────────────────────────── */}
       <Route element={<ProtectedRoute />}>
-
         {/* Root redirect — resolves to /:firstWorkspaceId/boards          */}
         <Route path="/" element={<RootRedirect />} />
 
@@ -149,15 +143,17 @@ export default function App() {
         <Route path="/:workspaceId" element={<AppLayout />}>
           <Route index element={<Navigate to="boards" replace />} />
           <Route path="boards" element={<BoardsPage />} />
-          <Route path="boards/:boardId" element={<BoardPage />} />
+          {/* boards/:boardId moved out ↓ */}
           <Route path="members" element={<MembersPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
 
+        {/* Board view — full screen, no sidebar */}
+        <Route path="/:workspaceId/boards/:boardId" element={<BoardPage />} />
       </Route>
 
       {/* ── 404 ─────────────────────────────────────────────────────────── */}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
-  )
+  );
 }

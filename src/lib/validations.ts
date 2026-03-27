@@ -129,7 +129,7 @@ export const createBoardSchema = z.object({
     .min(1, 'Board title is required')
     .max(100, 'Board title must be 100 characters or fewer')
     .transform((val) => val.trim()),
-  visibility: z.enum(['workspace', 'private']).default('workspace'),
+  visibility: z.enum(['workspace', 'private']),
 })
 
 export type CreateBoardFormValues = z.infer<typeof createBoardSchema>

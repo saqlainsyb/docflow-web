@@ -41,8 +41,8 @@ import { cn } from '@/lib/utils'
 
 const SERVER_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   VALIDATION_ERROR: 'Name is invalid. Check length and try again.',
-  RATE_LIMITED: 'Too many attempts. Please wait a moment.',
-  INTERNAL_ERROR: 'Something went wrong. Please try again.',
+  RATE_LIMITED:     'Too many attempts. Please wait a moment.',
+  INTERNAL_ERROR:   'Something went wrong. Please try again.',
 }
 
 const FALLBACK_ERROR = 'Something went wrong. Please try again.'
@@ -55,12 +55,10 @@ function getServerError(error: unknown): string | null {
 }
 
 // ── CreateWorkspaceModal ──────────────────────────────────────────────────────
+// No props — ModalManager only renders this when activeModal.type === 'createWorkspace',
+// so the dialog is always open when mounted. open=true is a constant here.
 
-interface CreateWorkspaceModalProps {
-  open: boolean
-}
-
-export function CreateWorkspaceModal({ open }: CreateWorkspaceModalProps) {
+export function CreateWorkspaceModal() {
   const dispatch = useAppDispatch()
   const { mutate: create, isPending, error, reset: resetMutation } = useCreateWorkspace()
 
@@ -75,15 +73,13 @@ export function CreateWorkspaceModal({ open }: CreateWorkspaceModalProps) {
     defaultValues: { name: '' },
   })
 
-  // Focus the input when the dialog opens
+  // Focus the input on mount — replaces the open-prop useEffect.
+  // Small delay so Radix Dialog's entrance animation doesn't cause
+  // a layout shift in browsers that handle focus-during-animation poorly.
   useEffect(() => {
-    if (open) {
-      // Small delay — Radix Dialog animates in, focus before animation
-      // ends causes layout shift in some browsers
-      const t = setTimeout(() => setFocus('name'), 50)
-      return () => clearTimeout(t)
-    }
-  }, [open, setFocus])
+    const t = setTimeout(() => setFocus('name'), 50)
+    return () => clearTimeout(t)
+  }, [setFocus])
 
   const serverError = getServerError(error)
 
@@ -93,22 +89,14 @@ export function CreateWorkspaceModal({ open }: CreateWorkspaceModalProps) {
     dispatch(closeModal())
   }
 
-  function handleOpenChange(open: boolean) {
-    if (!open) handleClose()
-  }
-
   function onSubmit(data: CreateWorkspaceFormValues) {
     create(data, {
-      onSuccess: () => {
-        // useCreateWorkspace already navigates to the new workspace —
-        // just clean up the form and close the modal
-        handleClose()
-      },
+      onSuccess: () => handleClose(),
     })
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open onOpenChange={(open) => { if (!open) handleClose() }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New Workspace</DialogTitle>
@@ -146,23 +134,13 @@ export function CreateWorkspaceModal({ open }: CreateWorkspaceModalProps) {
                 'transition-all duration-200',
                 errors.name && 'border-destructive focus:border-destructive',
               )}
-              aria-invalid={!!errors.name}
-              aria-describedby={
-                errors.name
-                  ? 'workspace-name-create-error'
-                  : serverError
-                    ? 'workspace-name-create-server-error'
-                    : undefined
-              }
             />
-
             {errors.name && (
               <p
-                id="workspace-name-create-error"
                 role="alert"
                 className="flex items-center gap-1 text-[11px] font-medium text-destructive"
               >
-                <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
+                <AlertCircle className="size-3 shrink-0" />
                 {errors.name.message}
               </p>
             )}
@@ -171,11 +149,10 @@ export function CreateWorkspaceModal({ open }: CreateWorkspaceModalProps) {
           {/* Server error */}
           {serverError && (
             <p
-              id="workspace-name-create-server-error"
               role="alert"
-              className="flex items-center gap-1.5 text-sm text-destructive"
+              className="flex items-center gap-1.5 text-[11px] font-medium text-destructive"
             >
-              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              <AlertCircle className="size-3 shrink-0" />
               {serverError}
             </p>
           )}
@@ -210,12 +187,12 @@ export function CreateWorkspaceModal({ open }: CreateWorkspaceModalProps) {
             >
               {isPending ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  <Loader2 className="size-4 animate-spin" />
                   Creating…
                 </>
               ) : (
                 <>
-                  <Plus className="size-4" aria-hidden="true" />
+                  <Plus className="size-4" />
                   Create workspace
                 </>
               )}

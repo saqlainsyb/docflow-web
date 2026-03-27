@@ -90,6 +90,18 @@ export interface ColumnWithCards {
   cards: CardResponse[]
 }
 
+// Response from POST /workspaces/:id/boards
+// The backend returns the raw Board model (no json tags) so field names
+// are Go's default: PascalCase. ID → "ID", WorkspaceID → "WorkspaceID" etc.
+export interface BoardCreateResponse {
+  ID: string
+  WorkspaceID: string
+  Title: string
+  Visibility: string
+  CreatedAt: string
+  UpdatedAt: string
+}
+
 export interface BoardListItem {
   id: string
   workspace_id: string

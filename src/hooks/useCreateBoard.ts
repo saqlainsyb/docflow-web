@@ -22,7 +22,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { workspaceBoardsQueryKey } from '@/hooks/useWorkspaceBoards'
-import type { BoardListItem } from '@/lib/types'
+import type { BoardCreateResponse } from '@/lib/types'
 import type { CreateBoardFormValues } from '@/lib/validations'
 
 export function useCreateBoard(workspaceId: string) {
@@ -33,20 +33,17 @@ export function useCreateBoard(workspaceId: string) {
   return useMutation({
     mutationFn: (values: CreateBoardFormValues) =>
       api
-        .post<BoardListItem>(ROUTES.boards.create(workspaceId), values)
+        .post<BoardCreateResponse>(ROUTES.boards.create(workspaceId), values)
         .then((res) => res.data),
 
     onSuccess: (newBoard) => {
-      // Invalidate the board list so BoardsPage reflects the new board
       queryClient.invalidateQueries({
         queryKey: workspaceBoardsQueryKey(workspaceId),
       })
 
-      // Navigate to the new board — workspaceId from params is the
-      // canonical source; fall back to the hook param if not in a
-      // workspace route context (shouldn't happen, but safe)
       const wsId = workspaceIdFromParams ?? workspaceId
-      navigate(`/${wsId}/boards/${newBoard.id}`)
+      // Backend returns PascalCase field names (no json tags on Board struct)
+      navigate(`/${wsId}/boards/${newBoard.ID}`)
     },
   })
 }

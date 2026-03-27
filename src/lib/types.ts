@@ -92,16 +92,21 @@ export interface ColumnWithCards {
 
 export interface BoardListItem {
   id: string
+  workspace_id: string
   title: string
   visibility: BoardVisibility
+  member_count: number  // added: backend sends this in BoardResponse
+  card_count: number    // added: backend sends this in BoardResponse
   created_at: string
-  updated_at: string
+  updated_at: string    // note: backend Board model has UpdatedAt
 }
 
 export interface BoardDetailResponse {
   id: string
+  workspace_id: string      // added: backend sends this
   title: string
   visibility: BoardVisibility
+  is_public_view: boolean   // added: backend sends this
   columns: ColumnWithCards[]
   members: MemberResponse[]
   created_at: string
@@ -115,7 +120,7 @@ export interface ShareLinkResponse {
 
 export interface ColumnResponse {
   id: string
-  board_id: string
+  board_id: string    // added: backend sends this in ColumnResponse
   title: string
   position: number
   created_at: string

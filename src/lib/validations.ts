@@ -1,3 +1,4 @@
+// src/lib/validations.ts
 import { z } from 'zod'
 
 // ── Reusable field definitions ─────────────────────────────────────────────────
@@ -31,7 +32,6 @@ export const registerSchema = z
     confirmPassword: z.string().min(1, 'Please confirm your password'),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    // path targets the specific field that should show the error
     path: ['confirmPassword'],
     message: 'Passwords do not match',
   })
@@ -102,7 +102,7 @@ export type InviteMemberFormValues = z.infer<typeof inviteMemberSchema>
 
 // Change member role (PATCH /workspaces/:id/members/:uid)
 // 'owner' is intentionally excluded — ownership cannot be assigned via this
-// endpoint per the backend service rules (section 8.2 of the architecture doc).
+// endpoint per the backend service rules.
 // The UI will only ever show 'admin' and 'member' as options.
 export const changeMemberRoleSchema = z.object({
   role: z.enum(['admin', 'member'], {
@@ -116,3 +116,84 @@ export type ChangeMemberRoleFormValues = z.infer<typeof changeMemberRoleSchema>
 // Use this wherever a role picker renders. Import WorkspaceRole from
 // types.ts when you need the full set (e.g. displaying the owner's badge).
 export type AssignableRole = ChangeMemberRoleFormValues['role']
+
+// ── Boards ─────────────────────────────────────────────────────────────────────
+
+// Create board (POST /workspaces/:id/boards)
+// Title: 1–100 chars, trimmed. Mirrors CreateBoardRequest.
+// Visibility: defaults to 'workspace' — the safe default (visible to all
+// workspace members). The user can opt into 'private' explicitly.
+export const createBoardSchema = z.object({
+  title: z
+    .string()
+    .min(1, 'Board title is required')
+    .max(100, 'Board title must be 100 characters or fewer')
+    .transform((val) => val.trim()),
+  visibility: z.enum(['workspace', 'private']).default('workspace'),
+})
+
+export type CreateBoardFormValues = z.infer<typeof createBoardSchema>
+
+// ── Columns ────────────────────────────────────────────────────────────────────
+
+// Create column (POST /boards/:id/columns)
+// Title only — position is computed by fractional.ts and injected before submit.
+// The backend UpdateColumnRequest also accepts an optional position for
+// reordering, but that's handled programmatically (not via a form).
+export const createColumnSchema = z.object({
+  title: z
+    .string()
+    .min(1, 'Column title is required')
+    .max(100, 'Column title must be 100 characters or fewer')
+    .transform((val) => val.trim()),
+})
+
+export type CreateColumnFormValues = z.infer<typeof createColumnSchema>
+
+// ── Cards ──────────────────────────────────────────────────────────────────────
+
+// The 6-color palette enforced at DB level — mirrors CardColor in types.ts.
+// Validated here so the form can't submit an arbitrary hex string.
+const CARD_COLORS = [
+  '#EF4444', // red
+  '#F97316', // orange
+  '#EAB308', // yellow
+  '#22C55E', // green
+  '#3B82F6', // blue
+  '#A855F7', // purple
+] as const
+
+export const cardColorSchema = z.enum(CARD_COLORS)
+export type CardColorValue = z.infer<typeof cardColorSchema>
+
+// Create card (POST /columns/:id/cards)
+// Title: 1–200 chars, trimmed. Color is optional — omitting it means no color.
+// Position is computed by fractional.ts and injected before submit, not a
+// user-facing field.
+export const createCardSchema = z.object({
+  title: z
+    .string()
+    .min(1, 'Card title is required')
+    .max(200, 'Card title must be 200 characters or fewer')
+    .transform((val) => val.trim()),
+  color: cardColorSchema.optional(),
+})
+
+export type CreateCardFormValues = z.infer<typeof createCardSchema>
+
+// Update card (PATCH /cards/:id)
+// All fields optional — only changed ones are sent (PATCH semantics).
+// assignee_id: string (UUID) to assign, null to explicitly unassign,
+// undefined/absent to leave unchanged.
+export const updateCardSchema = z.object({
+  title: z
+    .string()
+    .min(1, 'Card title is required')
+    .max(200, 'Card title must be 200 characters or fewer')
+    .transform((val) => val.trim())
+    .optional(),
+  color: cardColorSchema.nullable().optional(),
+  assignee_id: z.string().uuid('Invalid user ID').nullable().optional(),
+})
+
+export type UpdateCardFormValues = z.infer<typeof updateCardSchema>

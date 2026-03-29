@@ -1,4 +1,3 @@
-// src/pages/workspace/DocumentEditorPage.tsx
 // Stable version - should show cursors reliably again
 
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
@@ -16,7 +15,6 @@ import { useBoard } from '@/hooks/useBoard'
 import { useDocumentToken } from '@/hooks/useDocumentToken'
 import { useDocumentSnapshot } from '@/hooks/useDocumentSnapshot'
 import { cn } from '@/lib/utils'
-import type { BoardDetailResponse } from '@/lib/types'
 
 type WsStatus = 'connecting' | 'connected' | 'disconnected'
 
@@ -287,31 +285,21 @@ export function DocumentEditorPage() {
       }
     }, 250)
 
-    // beforeunload fires on refresh and tab close — React's useEffect cleanup
-    // does NOT run in these cases. Without this handler, the departing client
-    // never nulls out its awareness state, so every other peer retains a ghost
-    // cursor for that clientID indefinitely. Each refresh accumulates one more.
-    //
-    // setLocalState(null) encodes a well-formed Yjs awareness update that
-    // identifies our clientID and marks it as removed. The browser sends it
-    // synchronously before the page unloads (WebSocket close is best-effort
-    // but fast enough on LAN/localhost to arrive before the TCP teardown).
-    const handleBeforeUnload = () => {
-      if (provider.awareness) {
-        provider.awareness.setLocalState(null)
+    provider.awareness.on('change', ({ added }: { added: number[] }) => {
+      if (added.length > 0) {
+        setTimeout(() => {
+          provider.awareness.setLocalStateField('user', {
+            name: userName,
+            color: cursorColor,
+          })
+        }, 500)
       }
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
+    })
 
     setReadyProvider(provider)
 
     return () => {
       clearTimeout(timeout)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      // Also null out on normal unmount (navigating away within the SPA)
-      if (provider.awareness) {
-        provider.awareness.setLocalState(null)
-      }
       provider.disconnect()
       provider.destroy()
       providerRef.current = null

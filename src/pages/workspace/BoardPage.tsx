@@ -28,6 +28,11 @@
 //
 // Sub-components (page-scoped):
 //   BoardTopbar   — back nav, title, member avatars, share/more buttons
+//
+// Module 6 addition:
+//   useBoardWebSocket(boardId) — opens WS /ws/boards/:boardId and applies
+//   real-time card/column events directly to the TanStack Query cache.
+//   No UI changes required — the cache update flows through to columns → render.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useCallback } from 'react'
@@ -49,6 +54,7 @@ import { useAppDispatch } from '@/store/hooks'
 import { openModal } from '@/store'
 import { useBoard } from '@/hooks/useBoard'
 import { useMoveCard } from '@/hooks/useMoveCard'
+import { useBoardWebSocket } from '@/hooks/useBoardWebSocket'
 import { Column } from '@/components/board/Column'
 import { Card } from '@/components/board/Card'
 import { between, before, after, needsRebalance, rebalance } from '@/lib/fractional'
@@ -182,6 +188,11 @@ export function BoardPage() {
 
   const { data: board, isLoading, isError } = useBoard(boardId)
   const { mutate: moveCard } = useMoveCard(boardId ?? '')
+
+  // Module 6: open the board WebSocket and keep it alive for the lifetime of
+  // this page. All real-time events are applied to the TanStack Query cache
+  // inside the hook — no local state wiring required here.
+  useBoardWebSocket(boardId)
 
   // Local column state — mirrors the board query but allows optimistic
   // cross-column reordering during an active drag without mutating the cache.
@@ -401,7 +412,7 @@ export function BoardPage() {
                 dispatch(openModal({ type: 'createColumn', boardId: boardId ?? '' }))
               }
               className={cn(
-                'flex-shrink-0 w-80 h-full min-h-48 flex flex-col items-center justify-center gap-4',
+                'shrink-0 w-80 h-full min-h-48 flex flex-col items-center justify-center gap-4',
                 'rounded-2xl border-2 border-dashed border-outline-variant/10',
                 'hover:border-primary/20 hover:bg-surface-container-low/50',
                 'transition-all text-on-surface-variant hover:text-primary',

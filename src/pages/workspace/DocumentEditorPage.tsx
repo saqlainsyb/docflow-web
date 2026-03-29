@@ -1,34 +1,8 @@
 // src/pages/workspace/DocumentEditorPage.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-// Full-screen collaborative document editor.
-//
-// Route: /:workspaceId/boards/:boardId/cards/:cardId
-//
-// Bootstrap sequence (must be strictly ordered):
-//   1. Read cardId from URL → look up card in the board cache (already loaded)
-//      → extract document_id (every card always has one)
-//   2. POST /documents/:id/token  → scoped JWT + assigned cursor color
-//   3. GET  /documents/:id/snapshot → base64 Yjs state + server clock
-//   4. Decode snapshot, apply to Y.Doc via Y.applyUpdate
-//   5. Create WebsocketProvider — speaks the y-websocket binary protocol that
-//      the Go backend implements (MsgSync 0x00, MsgAwareness 0x01)
-//   6. Mount <CollaborativeEditor provider={provider} ydoc={ydoc} />
-//      CollaborationCursor requires a live provider at useEditor() init time.
-//      We solve this by keeping it in a child component that only mounts once
-//      the provider is created — never passing undefined to the extension.
-//
-// Architecture note — why CollaborativeEditor is a separate component:
-//   CollaborationCursor reads provider.awareness synchronously when TipTap
-//   builds its ProseMirror plugins. If provider is undefined at that moment,
-//   it throws "Cannot read properties of undefined (reading 'awareness')".
-//   The dependency-array trick on useEditor() does not help because
-//   useEditor() still runs on the very first render before any effect fires.
-//   The only safe fix: don't call useEditor() until the provider exists —
-//   which conditional rendering of a child component achieves cleanly.
-// ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useAppSelector } from '@/store/hooks'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -43,73 +17,111 @@ import { useDocumentSnapshot } from '@/hooks/useDocumentSnapshot'
 import { cn } from '@/lib/utils'
 import type { BoardDetailResponse } from '@/lib/types'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 type WsStatus = 'connecting' | 'connected' | 'disconnected'
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+const CURSOR_PALETTE = [
+  '#F87171', '#FB923C', '#FBBF24', '#34D399',
+  '#38BDF8', '#818CF8', '#E879F9', '#A3E635',
+  '#F472B6', '#60A5FA', '#4ADE80', '#C084FC',
+]
+
+function colorFromUserId(userId: string): string {
+  if (!userId) return CURSOR_PALETTE[0]
+  let hash = 0
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
+  }
+  return CURSOR_PALETTE[hash % CURSOR_PALETTE.length]
+}
+
+function renderCursor(user: any): HTMLElement {
+  const displayName = user?.name ?? `User: ${user?.clientId ?? 'Unknown'}`
+  const displayColor = user?.color ?? '#FB923C'
+
+  const caret = document.createElement('span')
+  Object.assign(caret.style, {
+    position: 'relative',
+    display: 'inline-block',
+    width: '2px',
+    height: '1.25em',
+    verticalAlign: 'text-top',
+    backgroundColor: displayColor,
+    boxShadow: `0 0 4px 1px ${displayColor}99, 0 0 10px 3px ${displayColor}33`,
+    borderRadius: '1px',
+    marginLeft: '-1px',
+    pointerEvents: 'none',
+    userSelect: 'none',
+    zIndex: '10',
+  })
+
+  const chip = document.createElement('span')
+  chip.textContent = displayName
+  Object.assign(chip.style, {
+    position: 'absolute',
+    top: '-1.7em',
+    left: '2px',
+    fontSize: '10px',
+    fontWeight: '600',
+    fontFamily: 'Inter, system-ui, sans-serif',
+    lineHeight: '1',
+    padding: '2px 7px 3px',
+    borderRadius: '4px',
+    backgroundColor: displayColor,
+    color: '#fff',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+    userSelect: 'none',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+    transform: 'translateY(-2px)',
+  })
+
+  caret.appendChild(chip)
+  return caret
+}
+
+// Sub-components remain the same (ConnectionBadge, EditorTopbar, EditorSkeleton)
 
 function ConnectionBadge({ status }: { status: WsStatus }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span
-        className={cn(
-          'w-2 h-2 rounded-full shrink-0',
-          status === 'connected'    && 'bg-green-500',
-          status === 'connecting'   && 'bg-amber-400 animate-pulse',
-          status === 'disconnected' && 'bg-red-500',
-        )}
-      />
-      <span
-        className={cn(
-          'text-xs font-medium',
-          status === 'connected'    && 'text-green-400',
-          status === 'connecting'   && 'text-amber-400',
-          status === 'disconnected' && 'text-red-400',
-        )}
-      >
-        {status === 'connected'    && 'Live'}
-        {status === 'connecting'   && 'Connecting…'}
+      <span className={cn(
+        'w-2 h-2 rounded-full shrink-0',
+        status === 'connected' && 'bg-green-500',
+        status === 'connecting' && 'bg-amber-400 animate-pulse',
+        status === 'disconnected' && 'bg-red-500',
+      )} />
+      <span className={cn(
+        'text-xs font-medium',
+        status === 'connected' && 'text-green-400',
+        status === 'connecting' && 'text-amber-400',
+        status === 'disconnected' && 'text-red-400',
+      )}>
+        {status === 'connected' && 'Live'}
+        {status === 'connecting' && 'Connecting…'}
         {status === 'disconnected' && 'Disconnected'}
       </span>
     </div>
   )
 }
 
-function EditorTopbar({
-  cardTitle,
-  wsStatus,
-  onBack,
-}: {
+function EditorTopbar({ cardTitle, wsStatus, onBack }: {
   cardTitle: string
   wsStatus: WsStatus
   onBack: () => void
 }) {
   return (
-    <header
-      className={cn(
-        'h-16 sticky top-0 z-30 shrink-0',
-        'bg-background/80 backdrop-blur-md',
-        'border-b border-outline-variant/10',
-        'flex items-center justify-between px-6',
-      )}
-    >
+    <header className={cn(
+      'h-16 sticky top-0 z-30 shrink-0',
+      'bg-background/80 backdrop-blur-md border-b border-outline-variant/10',
+      'flex items-center justify-between px-6',
+    )}>
       <div className="flex items-center gap-4 min-w-0">
-        <button
-          onClick={onBack}
-          aria-label="Back to board"
-          className={cn(
-            'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
-            'text-on-surface-variant hover:bg-surface-container-highest',
-            'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-          )}
-        >
+        <button onClick={onBack} aria-label="Back to board"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-highest transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="min-w-0">
-          <h1 className="font-display font-bold text-lg text-on-surface truncate leading-tight">
-            {cardTitle}
-          </h1>
+          <h1 className="font-display font-bold text-lg text-on-surface truncate leading-tight">{cardTitle}</h1>
           <p className="text-xs text-on-surface-variant/60 font-medium">Document</p>
         </div>
       </div>
@@ -127,38 +139,27 @@ function EditorSkeleton() {
         <div className="h-4 bg-surface-container-low rounded w-5/6" />
         <div className="h-4 bg-surface-container-low rounded w-4/5" />
       </div>
-      <div className="space-y-2 pt-2">
-        <div className="h-4 bg-surface-container-low rounded w-full" />
-        <div className="h-4 bg-surface-container-low rounded w-2/3" />
-      </div>
     </div>
   )
 }
-
-// ── CollaborativeEditor ───────────────────────────────────────────────────────
-// Only mounted once provider and ydoc are both fully initialised.
-// This guarantees useEditor() always receives a live provider — never undefined.
 
 interface CollaborativeEditorProps {
   provider: WebsocketProvider
   ydoc: Y.Doc
   wsStatus: WsStatus
+  userName: string
+  cursorColor: string
 }
 
-function CollaborativeEditor({ provider, ydoc, wsStatus }: CollaborativeEditorProps) {
+function CollaborativeEditor({ provider, ydoc, wsStatus, userName, cursorColor }: CollaborativeEditorProps) {
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // Yjs owns undo/redo — disable ProseMirror's built-in history stack
-        history: false,
-      }),
-      Collaboration.configure({
-        document: ydoc,
-      }),
-      // provider is guaranteed non-null here — component only mounts after
-      // the provider is created in the parent effect.
+      StarterKit.configure({ history: false }),
+      Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({
         provider,
+        user: { name: userName, color: cursorColor },
+        render: renderCursor,
       }),
     ],
     editorProps: {
@@ -178,27 +179,24 @@ function CollaborativeEditor({ provider, ydoc, wsStatus }: CollaborativeEditorPr
     },
   })
 
+  // Keep user in sync
+  useEffect(() => {
+    if (editor) {
+      editor.commands.updateUser({ name: userName, color: cursorColor })
+    }
+  }, [editor, userName, cursorColor])
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-12 relative">
       {wsStatus === 'disconnected' && (
-        <div
-          className={cn(
-            'mb-6 flex items-center gap-3 px-4 py-3 rounded-xl',
-            'bg-destructive/10 border border-destructive/20 text-destructive',
-          )}
-        >
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive">
           <WifiOff className="w-4 h-4 shrink-0" />
-          <p className="text-sm font-medium">
-            Connection lost — changes are saved locally and will sync on reconnect.
-          </p>
+          <p className="text-sm font-medium">Connection lost — changes are saved locally and will sync on reconnect.</p>
         </div>
       )}
 
       {editor?.isEmpty && (
-        <p
-          className="absolute top-12 left-6 pointer-events-none text-on-surface-variant/30 text-base select-none"
-          aria-hidden="true"
-        >
+        <p className="absolute top-12 left-6 pointer-events-none text-on-surface-variant/30 text-base select-none" aria-hidden="true">
           Start writing…
         </p>
       )}
@@ -208,15 +206,12 @@ function CollaborativeEditor({ provider, ydoc, wsStatus }: CollaborativeEditorPr
   )
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
+// Helpers unchanged
 function base64ToUint8Array(b64: string): Uint8Array {
   if (!b64) return new Uint8Array(0)
   const binary = atob(b64)
   const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return bytes
 }
 
@@ -229,53 +224,24 @@ function findCardInBoard(board: BoardDetailResponse | undefined, cardId: string)
   return undefined
 }
 
-// ── DocumentEditorPage ────────────────────────────────────────────────────────
-
 export function DocumentEditorPage() {
-  const { workspaceId, boardId, cardId } = useParams<{
-    workspaceId: string
-    boardId: string
-    cardId: string
-  }>()
+  const { workspaceId, boardId, cardId } = useParams<{ workspaceId: string; boardId: string; cardId: string }>()
   const navigate = useNavigate()
 
-  // ── Step 1: card → document_id from board cache ───────────────────────────
+  const authUser = useAppSelector((s) => s.auth.user)
+  const userName = authUser?.name ?? 'Anonymous'
+  const userId = authUser?.id ?? ''
+  const cursorColor = useMemo(() => colorFromUserId(userId), [userId])
 
-  const { data: board } = useBoard(boardId)
-
-  const card = useMemo(
-    () => findCardInBoard(board, cardId ?? ''),
-    [board, cardId],
-  )
-
+  const { data: board, isLoading: isBoardLoading, isError: isBoardError } = useBoard(boardId)
+  const card = useMemo(() => findCardInBoard(board, cardId ?? ''), [board, cardId])
   const documentId = card?.document_id
 
-  // ── Step 2: scoped document JWT ───────────────────────────────────────────
-
-  const {
-    data: tokenData,
-    isLoading: isTokenLoading,
-    isError: isTokenError,
-    error: tokenError,
-  } = useDocumentToken(documentId)
-
-  // ── Step 3: initial Yjs snapshot (enabled only after token is ready) ───────
-
-  const {
-    data: snapshotData,
-    isLoading: isSnapshotLoading,
-    isError: isSnapshotError,
-  } = useDocumentSnapshot({
-    documentId,
-    tokenReady: Boolean(tokenData),
+  const { data: tokenData, isLoading: isTokenLoading, isError: isTokenError, error: tokenError } = useDocumentToken(documentId)
+  const { data: snapshotData, isLoading: isSnapshotLoading, isError: isSnapshotError } = useDocumentSnapshot({ 
+    documentId, 
+    tokenReady: Boolean(tokenData) 
   })
-
-  // ── Steps 4–5: Y.Doc + WebsocketProvider ─────────────────────────────────
-  //
-  // ydocRef: created once, never re-created — it is the in-memory CRDT.
-  // readyProvider: lifted into state so React re-renders and mounts
-  //   <CollaborativeEditor> exactly once after the provider is created.
-  //   A plain ref would not trigger the re-render that swaps skeleton → editor.
 
   const ydocRef = useRef<Y.Doc>(new Y.Doc())
   const providerRef = useRef<WebsocketProvider | null>(null)
@@ -284,65 +250,68 @@ export function DocumentEditorPage() {
 
   useEffect(() => {
     if (!tokenData || !snapshotData || !documentId) return
-    if (providerRef.current) return // already initialised
+    if (providerRef.current) return
 
     const ydoc = ydocRef.current
-
-    // Hydrate Y.Doc with server snapshot before connecting —
-    // editor shows last-known content immediately, sync fills in the delta.
-    const snapshotBytes = base64ToUint8Array(snapshotData.snapshot)
-    if (snapshotBytes.length > 0) {
-      Y.applyUpdate(ydoc, snapshotBytes)
-    }
+    const bytes = base64ToUint8Array(snapshotData.snapshot)
+    if (bytes.length > 0) Y.applyUpdate(ydoc, bytes)
 
     const wsBase = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080'
-
     const provider = new WebsocketProvider(
       `${wsBase}/ws/documents`,
       documentId,
       ydoc,
-      {
-        params: { token: tokenData.token },
-        connect: false, // connect after listeners are attached
-      },
+      { params: { token: tokenData.token }, connect: false }
     )
 
     providerRef.current = provider
 
     provider.on('status', ({ status }: { status: string }) => {
-      if (status === 'connected')    setWsStatus('connected')
-      if (status === 'connecting')   setWsStatus('connecting')
+      if (status === 'connected') setWsStatus('connected')
+      if (status === 'connecting') setWsStatus('connecting')
       if (status === 'disconnected') setWsStatus('disconnected')
     })
 
-    // Awareness: cursor color assigned by the server for this session.
-    // TODO: replace tokenData.color with auth user name once profile is wired.
-    provider.awareness.setLocalStateField('user', {
-      name:  tokenData.color,
-      color: tokenData.color,
-    })
+    // Optional: better debugging
+    provider.on('sync', () => console.log('Yjs synced'))
+    provider.on('connection-error', (e) => console.error('WS connection error:', e))
 
     provider.connect()
 
-    // Lift into state — triggers the re-render that mounts CollaborativeEditor
+    // Set awareness with small delay so cursor extension is ready
+    const timeout = setTimeout(() => {
+      if (provider) {
+        provider.awareness.setLocalStateField('user', {
+          name: userName,
+          color: cursorColor,
+        })
+      }
+    }, 100)
+
     setReadyProvider(provider)
 
     return () => {
+      clearTimeout(timeout)
       provider.disconnect()
       provider.destroy()
       providerRef.current = null
       setReadyProvider(null)
       setWsStatus('connecting')
     }
-  }, [tokenData, snapshotData, documentId])
+  }, [tokenData, snapshotData, documentId, userName, cursorColor])
 
-  // ── Navigation ────────────────────────────────────────────────────────────
+  // Update awareness when name/color changes (safe version)
+  useEffect(() => {
+    if (!readyProvider) return
+    readyProvider.awareness.setLocalStateField('user', {
+      name: userName,
+      color: cursorColor,
+    })
+  }, [readyProvider, userName, cursorColor])
 
-  const handleBack = () => navigate(`/${workspaceId}/boards/${boardId}`)
+  const handleBack = useCallback(() => navigate(`/${workspaceId}/boards/${boardId}`), [navigate, workspaceId, boardId])
 
-  // ── Error states ──────────────────────────────────────────────────────────
-
-  const tokenStatus = (tokenError as { response?: { status?: number } })?.response?.status
+  const tokenStatus = (tokenError as any)?.response?.status ?? (tokenError as any)?.status
   const isAccessDenied = tokenStatus === 403 || tokenStatus === 401
 
   if (isTokenError) {
@@ -350,56 +319,36 @@ export function DocumentEditorPage() {
       <div className="flex h-screen items-center justify-center flex-col gap-4">
         <AlertCircle className="w-8 h-8 text-destructive" />
         <p className="text-on-surface font-semibold">
-          {isAccessDenied
-            ? "You don't have access to this document"
-            : 'Failed to open document'}
+          {isAccessDenied ? "You don't have access to this document" : 'Failed to open document'}
         </p>
-        <button
-          onClick={handleBack}
-          className="text-primary text-sm hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-        >
-          Back to board
-        </button>
+        <button onClick={handleBack} className="text-primary text-sm hover:underline">Back to board</button>
       </div>
     )
   }
 
-  if (isSnapshotError) {
+  if (isSnapshotError || isBoardError || (!documentId && !isBoardLoading && board)) {
     return (
       <div className="flex h-screen items-center justify-center flex-col gap-4">
         <WifiOff className="w-8 h-8 text-destructive" />
-        <p className="text-on-surface font-semibold">Failed to load document content</p>
-        <button
-          onClick={handleBack}
-          className="text-primary text-sm hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-        >
-          Back to board
-        </button>
+        <p className="text-on-surface font-semibold">Failed to load document or board not found</p>
+        <button onClick={handleBack} className="text-primary text-sm hover:underline">Back to board</button>
       </div>
     )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  const isBootstrapping = !board || isTokenLoading || isSnapshotLoading || !readyProvider
+  const isBootstrapping = isBoardLoading || isTokenLoading || isSnapshotLoading || !readyProvider || !board || !documentId
 
   return (
     <div className="flex flex-col h-screen bg-background overflow-hidden">
-      <EditorTopbar
-        cardTitle={card?.title ?? '…'}
-        wsStatus={wsStatus}
-        onBack={handleBack}
-      />
-
+      <EditorTopbar cardTitle={card?.title ?? '…'} wsStatus={wsStatus} onBack={handleBack} />
       <div className="flex-1 overflow-y-auto">
-        {isBootstrapping ? (
-          <EditorSkeleton />
-        ) : (
-          // readyProvider is non-null here — isBootstrapping gate above ensures it
+        {isBootstrapping ? <EditorSkeleton /> : (
           <CollaborativeEditor
             provider={readyProvider!}
             ydoc={ydocRef.current}
             wsStatus={wsStatus}
+            userName={userName}
+            cursorColor={cursorColor}
           />
         )}
       </div>

@@ -1,4 +1,5 @@
 // src/pages/workspace/DocumentEditorPage.tsx
+// Stable version - should show cursors reliably again
 
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -79,8 +80,7 @@ function renderCursor(user: any): HTMLElement {
   return caret
 }
 
-// Sub-components remain the same (ConnectionBadge, EditorTopbar, EditorSkeleton)
-
+// Sub-components
 function ConnectionBadge({ status }: { status: WsStatus }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -110,14 +110,13 @@ function EditorTopbar({ cardTitle, wsStatus, onBack }: {
   onBack: () => void
 }) {
   return (
-    <header className={cn(
-      'h-16 sticky top-0 z-30 shrink-0',
-      'bg-background/80 backdrop-blur-md border-b border-outline-variant/10',
-      'flex items-center justify-between px-6',
-    )}>
+    <header className="h-16 sticky top-0 z-30 shrink-0 bg-background/80 backdrop-blur-md border-b border-outline-variant/10 flex items-center justify-between px-6">
       <div className="flex items-center gap-4 min-w-0">
-        <button onClick={onBack} aria-label="Back to board"
-          className="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-highest transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
+        <button
+          onClick={onBack}
+          aria-label="Back to board"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-highest transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="min-w-0">
@@ -137,7 +136,6 @@ function EditorSkeleton() {
       <div className="space-y-2 pt-4">
         <div className="h-4 bg-surface-container-low rounded w-full" />
         <div className="h-4 bg-surface-container-low rounded w-5/6" />
-        <div className="h-4 bg-surface-container-low rounded w-4/5" />
       </div>
     </div>
   )
@@ -158,7 +156,7 @@ function CollaborativeEditor({ provider, ydoc, wsStatus, userName, cursorColor }
       Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({
         provider,
-        user: { name: userName, color: cursorColor },
+        user: { name: userName, color: cursorColor },   // This is the most reliable part
         render: renderCursor,
       }),
     ],
@@ -179,7 +177,6 @@ function CollaborativeEditor({ provider, ydoc, wsStatus, userName, cursorColor }
     },
   })
 
-  // Keep user in sync
   useEffect(() => {
     if (editor) {
       editor.commands.updateUser({ name: userName, color: cursorColor })
@@ -206,24 +203,7 @@ function CollaborativeEditor({ provider, ydoc, wsStatus, userName, cursorColor }
   )
 }
 
-// Helpers unchanged
-function base64ToUint8Array(b64: string): Uint8Array {
-  if (!b64) return new Uint8Array(0)
-  const binary = atob(b64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes
-}
-
-function findCardInBoard(board: BoardDetailResponse | undefined, cardId: string) {
-  if (!board) return undefined
-  for (const col of board.columns) {
-    const card = col.cards.find((c) => c.id === cardId)
-    if (card) return card
-  }
-  return undefined
-}
-
+// ====================== MAIN PAGE ======================
 export function DocumentEditorPage() {
   const { workspaceId, boardId, cardId } = useParams<{ workspaceId: string; boardId: string; cardId: string }>()
   const navigate = useNavigate()
@@ -234,13 +214,21 @@ export function DocumentEditorPage() {
   const cursorColor = useMemo(() => colorFromUserId(userId), [userId])
 
   const { data: board, isLoading: isBoardLoading, isError: isBoardError } = useBoard(boardId)
-  const card = useMemo(() => findCardInBoard(board, cardId ?? ''), [board, cardId])
+  const card = useMemo(() => {
+    if (!board || !cardId) return undefined
+    for (const col of board.columns) {
+      const found = col.cards.find(c => c.id === cardId)
+      if (found) return found
+    }
+    return undefined
+  }, [board, cardId])
+
   const documentId = card?.document_id
 
   const { data: tokenData, isLoading: isTokenLoading, isError: isTokenError, error: tokenError } = useDocumentToken(documentId)
-  const { data: snapshotData, isLoading: isSnapshotLoading, isError: isSnapshotError } = useDocumentSnapshot({ 
-    documentId, 
-    tokenReady: Boolean(tokenData) 
+  const { data: snapshotData, isLoading: isSnapshotLoading, isError: isSnapshotError } = useDocumentSnapshot({
+    documentId,
+    tokenReady: Boolean(tokenData)
   })
 
   const ydocRef = useRef<Y.Doc>(new Y.Doc())
@@ -256,7 +244,16 @@ export function DocumentEditorPage() {
     const bytes = base64ToUint8Array(snapshotData.snapshot)
     if (bytes.length > 0) Y.applyUpdate(ydoc, bytes)
 
-    const wsBase = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080'
+    // Smart URL - works on both laptop and phone
+    const getWsBase = () => {
+      if (import.meta.env.DEV) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        return `${protocol}//${window.location.hostname}:8080`
+      }
+      return import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080'
+    }
+
+    const wsBase = getWsBase()
     const provider = new WebsocketProvider(
       `${wsBase}/ws/documents`,
       documentId,
@@ -267,31 +264,54 @@ export function DocumentEditorPage() {
     providerRef.current = provider
 
     provider.on('status', ({ status }: { status: string }) => {
+      console.log(`[WS Status] ${status}`)
       if (status === 'connected') setWsStatus('connected')
       if (status === 'connecting') setWsStatus('connecting')
       if (status === 'disconnected') setWsStatus('disconnected')
     })
 
-    // Optional: better debugging
-    provider.on('sync', () => console.log('Yjs synced'))
-    provider.on('connection-error', (e) => console.error('WS connection error:', e))
+    provider.on('connection-error', (err: any) => {
+      console.error('[WS Error]', err)
+    })
 
     provider.connect()
 
-    // Set awareness with small delay so cursor extension is ready
+    // Set awareness with moderate delay - this is the most stable approach
     const timeout = setTimeout(() => {
-      if (provider) {
+      if (provider.awareness) {
         provider.awareness.setLocalStateField('user', {
           name: userName,
           color: cursorColor,
         })
+        console.log(`[Awareness] Set for ${userName}`)
       }
-    }, 100)
+    }, 250)
+
+    // beforeunload fires on refresh and tab close — React's useEffect cleanup
+    // does NOT run in these cases. Without this handler, the departing client
+    // never nulls out its awareness state, so every other peer retains a ghost
+    // cursor for that clientID indefinitely. Each refresh accumulates one more.
+    //
+    // setLocalState(null) encodes a well-formed Yjs awareness update that
+    // identifies our clientID and marks it as removed. The browser sends it
+    // synchronously before the page unloads (WebSocket close is best-effort
+    // but fast enough on LAN/localhost to arrive before the TCP teardown).
+    const handleBeforeUnload = () => {
+      if (provider.awareness) {
+        provider.awareness.setLocalState(null)
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
 
     setReadyProvider(provider)
 
     return () => {
       clearTimeout(timeout)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      // Also null out on normal unmount (navigating away within the SPA)
+      if (provider.awareness) {
+        provider.awareness.setLocalState(null)
+      }
       provider.disconnect()
       provider.destroy()
       providerRef.current = null
@@ -300,7 +320,7 @@ export function DocumentEditorPage() {
     }
   }, [tokenData, snapshotData, documentId, userName, cursorColor])
 
-  // Update awareness when name/color changes (safe version)
+  // Keep in sync if name/color changes
   useEffect(() => {
     if (!readyProvider) return
     readyProvider.awareness.setLocalStateField('user', {
@@ -309,7 +329,9 @@ export function DocumentEditorPage() {
     })
   }, [readyProvider, userName, cursorColor])
 
-  const handleBack = useCallback(() => navigate(`/${workspaceId}/boards/${boardId}`), [navigate, workspaceId, boardId])
+  const handleBack = useCallback(() => {
+    navigate(`/${workspaceId}/boards/${boardId}`)
+  }, [navigate, workspaceId, boardId])
 
   const tokenStatus = (tokenError as any)?.response?.status ?? (tokenError as any)?.status
   const isAccessDenied = tokenStatus === 403 || tokenStatus === 401
@@ -340,7 +362,11 @@ export function DocumentEditorPage() {
 
   return (
     <div className="flex flex-col h-screen bg-background overflow-hidden">
-      <EditorTopbar cardTitle={card?.title ?? '…'} wsStatus={wsStatus} onBack={handleBack} />
+      <EditorTopbar 
+        cardTitle={card?.title ?? '…'} 
+        wsStatus={wsStatus} 
+        onBack={handleBack} 
+      />
       <div className="flex-1 overflow-y-auto">
         {isBootstrapping ? <EditorSkeleton /> : (
           <CollaborativeEditor
@@ -354,4 +380,12 @@ export function DocumentEditorPage() {
       </div>
     </div>
   )
+}
+
+function base64ToUint8Array(b64: string): Uint8Array {
+  if (!b64) return new Uint8Array(0)
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
 }

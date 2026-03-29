@@ -27,7 +27,7 @@ const root = document.getElementById('root')
 if (!root) throw new Error('root element not found')
 
 createRoot(root).render(
-  <>
+  <StrictMode>
     {/* Redux outermost — auth state must be available to everything */}
     <Provider store={store}>
       {/* QueryClient inside Redux — queries can read auth tokens from the store */}
@@ -39,5 +39,5 @@ createRoot(root).render(
         <ReactQueryDevtools initialIsOpen={false} />
       </QueryClientProvider>
     </Provider>
-  </>,
+  </StrictMode>,
 )

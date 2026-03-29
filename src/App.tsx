@@ -13,7 +13,8 @@ import { RegisterPage } from "@/pages/auth/RegisterPage";
 import { BoardsPage } from "@/pages/workspace/BoardsPage";
 import { MembersPage } from "@/pages/workspace/MembersPage";
 import { SettingsPage } from "@/pages/workspace/SettingsPage";
-import { BoardPage } from "@/pages/workspace/BoardPage"
+import { BoardPage } from "@/pages/workspace/BoardPage";
+import { DocumentEditorPage } from "@/pages/workspace/DocumentEditorPage";
 
 // ── Placeholder pages (replaced one module at a time) ─────────────────────────
 // Inline until each module is built. Never import a page that doesn't exist yet.
@@ -147,7 +148,6 @@ export default function App() {
         {/*   /:workspaceId/boards         → BoardsPage                    */}
         {/*   /:workspaceId/members        → MembersPage                   */}
         {/*   /:workspaceId/settings       → SettingsPage                  */}
-        {/*   /:workspaceId/boards/:boardId → BoardPage (Module 5)         */}
         <Route path="/:workspaceId" element={<AppLayout />}>
           <Route index element={<Navigate to="boards" replace />} />
           <Route path="boards" element={<BoardsPage />} />
@@ -156,8 +156,15 @@ export default function App() {
           <Route path="settings" element={<SettingsPage />} />
         </Route>
 
-        {/* Board view — full screen, no sidebar */}
+        {/* Board view — full screen, no sidebar                           */}
         <Route path="/:workspaceId/boards/:boardId" element={<BoardPage />} />
+
+        {/* Document editor — full screen, no sidebar (Module 7)          */}
+        {/* Navigated to when a card is clicked on the board view         */}
+        <Route
+          path="/:workspaceId/boards/:boardId/cards/:cardId"
+          element={<DocumentEditorPage />}
+        />
       </Route>
 
       {/* ── 404 ─────────────────────────────────────────────────────────── */}

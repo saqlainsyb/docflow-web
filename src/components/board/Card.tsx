@@ -19,6 +19,12 @@
 //   Doc icon — always shown (every card has a document_id)
 //   Created date — formatted as "MMM D"
 //
+// Navigation:
+//   Clicking the card title navigates to the full-screen document editor
+//   (/:workspaceId/boards/:boardId/cards/:cardId — Module 7).
+//   onPointerDown stopPropagation prevents dnd-kit from starting a drag.
+//   The card body itself remains the drag handle.
+//
 // Context menu (right-click or ⋯ button on hover):
 //   Edit card — opens editCard modal
 //   Archive   — calls useArchiveCard
@@ -26,6 +32,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
@@ -63,6 +70,8 @@ function formatDate(iso: string): string {
 
 export function Card({ card, boardId, isOverlay = false }: CardProps) {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
+  const { workspaceId } = useParams<{ workspaceId: string }>()
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const { mutate: archiveCard, isPending: isArchiving } = useArchiveCard(boardId)
@@ -84,6 +93,14 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  }
+
+  // Navigate to the full-screen document editor for this card.
+  // workspaceId is always in the URL when Card is rendered (BoardPage route).
+  function handleTitleClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!workspaceId) return
+    navigate(`/${workspaceId}/boards/${boardId}/cards/${card.id}`)
   }
 
   return (
@@ -113,8 +130,24 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
         />
       )}
 
-      {/* ── Card title ───────────────────────────────────────────────────── */}
-      <h4 className="font-semibold text-sm text-on-surface leading-snug mb-4 pr-6 group-hover:text-primary transition-colors">
+      {/* ── Card title (clickable → document editor) ─────────────────────── */}
+      <h4
+        onClick={handleTitleClick}
+        onPointerDown={(e) => e.stopPropagation()}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') handleTitleClick(e as unknown as React.MouseEvent)
+        }}
+        aria-label={`Open document for ${card.title}`}
+        className={cn(
+          'font-semibold text-sm text-on-surface leading-snug mb-4 pr-6',
+          'group-hover:text-primary transition-colors',
+          // Clear cursor and ring for the clickable title — card body is the drag handle
+          'cursor-pointer hover:underline underline-offset-2',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded',
+        )}
+      >
         {card.title}
       </h4>
 
@@ -240,21 +273,20 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
               Cancel
             </button>
             <button
-              onClick={() => deleteCard(card.id, { onSuccess: () => setDeleteOpen(false) })}
+              onClick={() => {
+                deleteCard(card.id)
+                setDeleteOpen(false)
+              }}
               disabled={isDeleting}
               className={cn(
                 'flex-1 py-2 rounded-lg text-xs font-bold',
-                'bg-destructive/10 text-destructive',
-                'hover:bg-destructive hover:text-background',
-                'flex items-center justify-center gap-1.5',
-                'transition-colors disabled:opacity-40 disabled:pointer-events-none',
+                'bg-destructive text-white',
+                'hover:brightness-110 transition-all',
+                'disabled:opacity-70 disabled:pointer-events-none',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
               )}
             >
-              {isDeleting
-                ? <Loader2 className="size-3 animate-spin" />
-                : 'Delete'
-              }
+              {isDeleting ? <Loader2 className="size-3.5 animate-spin mx-auto" /> : 'Delete'}
             </button>
           </div>
         </div>

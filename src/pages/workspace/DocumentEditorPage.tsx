@@ -1,5 +1,3 @@
-// Stable version - should show cursors reliably again
-
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAppSelector } from '@/store/hooks'
@@ -154,7 +152,7 @@ function CollaborativeEditor({ provider, ydoc, wsStatus, userName, cursorColor }
       Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({
         provider,
-        user: { name: userName, color: cursorColor },   // This is the most reliable part
+        user: { name: userName, color: cursorColor },
         render: renderCursor,
       }),
     ],
@@ -242,7 +240,6 @@ export function DocumentEditorPage() {
     const bytes = base64ToUint8Array(snapshotData.snapshot)
     if (bytes.length > 0) Y.applyUpdate(ydoc, bytes)
 
-    // Smart URL - works on both laptop and phone
     const getWsBase = () => {
       if (import.meta.env.DEV) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -274,7 +271,6 @@ export function DocumentEditorPage() {
 
     provider.connect()
 
-    // Set awareness with moderate delay - this is the most stable approach
     const timeout = setTimeout(() => {
       if (provider.awareness) {
         provider.awareness.setLocalStateField('user', {
@@ -298,8 +294,31 @@ export function DocumentEditorPage() {
 
     setReadyProvider(provider)
 
+    // ── Ghost cursor fix ───────────────────────────────────────────────────
+    // useEffect cleanup (return fn) does NOT fire on page refresh or tab
+    // close — the browser just kills the JS context. Without an explicit
+    // null broadcast, the Yjs awareness entry for this client stays alive
+    // on the server and on every other connected client, appearing as a
+    // ghost cursor until their awareness TTL expires.
+    //
+    // The beforeunload listener fires synchronously before the page unloads,
+    // giving us one last chance to broadcast setLocalState(null) over the
+    // still-open WebSocket. This covers refresh + tab close.
+    //
+    // The cleanup return fn still handles normal SPA navigation (back button,
+    // route change) where React unmounts the component gracefully.
+    // ──────────────────────────────────────────────────────────────────────
+    const handleBeforeUnload = () => {
+      provider.awareness.setLocalState(null)
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
     return () => {
       clearTimeout(timeout)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      // setLocalState(null) BEFORE disconnect — once the socket closes
+      // the broadcast can't reach anyone.
+      provider.awareness.setLocalState(null)
       provider.disconnect()
       provider.destroy()
       providerRef.current = null
@@ -308,7 +327,7 @@ export function DocumentEditorPage() {
     }
   }, [tokenData, snapshotData, documentId, userName, cursorColor])
 
-  // Keep in sync if name/color changes
+  // Keep awareness in sync if name/color changes mid-session
   useEffect(() => {
     if (!readyProvider) return
     readyProvider.awareness.setLocalStateField('user', {
@@ -350,10 +369,10 @@ export function DocumentEditorPage() {
 
   return (
     <div className="flex flex-col h-screen bg-background overflow-hidden">
-      <EditorTopbar 
-        cardTitle={card?.title ?? '…'} 
-        wsStatus={wsStatus} 
-        onBack={handleBack} 
+      <EditorTopbar
+        cardTitle={card?.title ?? '…'}
+        wsStatus={wsStatus}
+        onBack={handleBack}
       />
       <div className="flex-1 overflow-y-auto">
         {isBootstrapping ? <EditorSkeleton /> : (

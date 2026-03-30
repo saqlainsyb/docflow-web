@@ -16,6 +16,20 @@ import { cn } from '@/lib/utils'
 
 type WsStatus = 'connecting' | 'connected' | 'disconnected'
 
+// ── Awareness user shape ───────────────────────────────────────────────────────
+// Stored in Yjs awareness per connected client.
+interface AwarenessUser {
+  name: string
+  color: string
+  avatar_url: string | null
+  typing?: boolean
+}
+
+// What we read back out of provider.awareness.getStates()
+interface ConnectedUser extends AwarenessUser {
+  clientId: number
+}
+
 const CURSOR_PALETTE = [
   '#F87171', '#FB923C', '#FBBF24', '#34D399',
   '#38BDF8', '#818CF8', '#E879F9', '#A3E635',
@@ -29,6 +43,15 @@ function colorFromUserId(userId: string): string {
     hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
   }
   return CURSOR_PALETTE[hash % CURSOR_PALETTE.length]
+}
+
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '')
+    .join('')
 }
 
 function renderCursor(user: any): HTMLElement {
@@ -76,7 +99,151 @@ function renderCursor(user: any): HTMLElement {
   return caret
 }
 
-// Sub-components
+// ── useAwarenessUsers ──────────────────────────────────────────────────────────
+// Subscribes to Yjs awareness changes and returns the live list of ALL connected
+// users including self — so the current user also appears in the avatar stack.
+function useAwarenessUsers(provider: WebsocketProvider | null): ConnectedUser[] {
+  const [users, setUsers] = useState<ConnectedUser[]>([])
+
+  useEffect(() => {
+    if (!provider) {
+      setUsers([])
+      return
+    }
+
+    const read = () => {
+      const states = provider.awareness.getStates()
+      const result: ConnectedUser[] = []
+      states.forEach((state, clientId) => {
+        const u = state.user as AwarenessUser | undefined
+        if (u?.name) {
+          result.push({ clientId, ...u })
+        }
+      })
+      // Stable order: sort by clientId so avatars don't shuffle on every update
+      result.sort((a, b) => a.clientId - b.clientId)
+      setUsers(result)
+    }
+
+    read()
+    provider.awareness.on('change', read)
+    return () => {
+      provider.awareness.off('change', read)
+    }
+  }, [provider])
+
+  return users
+}
+
+// ── CollaboratorAvatars ────────────────────────────────────────────────────────
+// Stacked ring of avatars for everyone currently in the document room.
+// Shows up to MAX_VISIBLE avatars, then a "+N" overflow chip.
+// Each avatar has a colored ring border matching the user's cursor color.
+const MAX_VISIBLE = 3
+// Match sidebar avatar size (w-9 h-9 = 36px)
+const AVATAR_SIZE = 36
+// Thin separator gap only — page bg creates a clean edge between avatars
+const OVERLAP = 8
+
+// Injected once into <head> — keyframes can't be expressed in inline styles
+const TYPING_STYLE = `
+@keyframes df-typing-ring {
+  0%   { box-shadow: 0 0 0 2px oklch(0.12 0.015 265), 0 0 0 3.5px var(--ring-color), 0 0 6px 2px var(--ring-glow); }
+  50%  { box-shadow: 0 0 0 2px oklch(0.12 0.015 265), 0 0 0 3.5px var(--ring-color), 0 0 10px 4px var(--ring-glow); }
+  100% { box-shadow: 0 0 0 2px oklch(0.12 0.015 265), 0 0 0 3.5px var(--ring-color), 0 0 6px 2px var(--ring-glow); }
+}
+`
+if (typeof document !== 'undefined' && !document.getElementById('df-typing-style')) {
+  const el = document.createElement('style')
+  el.id = 'df-typing-style'
+  el.textContent = TYPING_STYLE
+  document.head.appendChild(el)
+}
+
+function CollaboratorAvatar({ user, index }: { user: ConnectedUser; index: number }) {
+  const [imgFailed, setImgFailed] = useState(false)
+
+  // ring-color at 90% opacity, glow at 35% — subtle but visible
+  const ringColor = user.color + 'e6'
+  const glowColor = user.color + '59'
+
+  return (
+    <div
+      style={{
+        width: AVATAR_SIZE,
+        height: AVATAR_SIZE,
+        borderRadius: '50%',
+        flexShrink: 0,
+        marginLeft: index === 0 ? 0 : -OVERLAP,
+        zIndex: MAX_VISIBLE - index,
+        // CSS custom props picked up by the keyframe
+        ['--ring-color' as any]: ringColor,
+        ['--ring-glow' as any]: glowColor,
+        boxShadow: user.typing
+          ? undefined  // animation drives box-shadow when typing
+          : '0 0 0 2px oklch(0.12 0.015 265)',
+        animation: user.typing
+          ? 'df-typing-ring 1.2s ease-in-out infinite'
+          : 'none',
+        transition: 'transform 0.15s ease, box-shadow 0.3s ease',
+        cursor: 'default',
+      }}
+      title={user.name}
+      className="hover:!z-50 hover:scale-105"
+    >
+      {user.avatar_url && !imgFailed ? (
+        <img
+          src={user.avatar_url}
+          alt={user.name}
+          style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <div className="w-full h-full rounded-full flex items-center justify-center bg-df-tertiary-container text-df-on-tertiary-container text-xs font-bold select-none">
+          {getInitials(user.name)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CollaboratorAvatars({ provider }: { provider: WebsocketProvider | null }) {
+  const users = useAwarenessUsers(provider)
+
+  if (users.length === 0) return null
+
+  const visible = users.slice(0, MAX_VISIBLE)
+  const overflow = users.length - MAX_VISIBLE
+
+  return (
+    <div className="flex items-center">
+      {visible.map((user, i) => (
+        <CollaboratorAvatar key={user.clientId} user={user} index={i} />
+      ))}
+
+      {overflow > 0 && (
+        // Overflow chip matches the same avatar style
+        <div
+          className="flex items-center justify-center rounded-full bg-df-tertiary-container text-df-on-tertiary-container text-xs font-bold select-none cursor-default"
+          style={{
+            width: AVATAR_SIZE,
+            height: AVATAR_SIZE,
+            marginLeft: -OVERLAP,
+            zIndex: 0,
+            flexShrink: 0,
+            boxShadow: '0 0 0 2px oklch(0.12 0.015 265)',
+          }}
+          title={`${overflow} more user${overflow === 1 ? '' : 's'}`}
+        >
+          +{overflow}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
 function ConnectionBadge({ status }: { status: WsStatus }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -100,10 +267,11 @@ function ConnectionBadge({ status }: { status: WsStatus }) {
   )
 }
 
-function EditorTopbar({ cardTitle, wsStatus, onBack }: {
+function EditorTopbar({ cardTitle, wsStatus, onBack, provider }: {
   cardTitle: string
   wsStatus: WsStatus
   onBack: () => void
+  provider: WebsocketProvider | null
 }) {
   return (
     <header className="h-16 sticky top-0 z-30 shrink-0 bg-background/80 backdrop-blur-md border-b border-outline-variant/10 flex items-center justify-between px-6">
@@ -120,7 +288,12 @@ function EditorTopbar({ cardTitle, wsStatus, onBack }: {
           <p className="text-xs text-on-surface-variant/60 font-medium">Document</p>
         </div>
       </div>
-      <ConnectionBadge status={wsStatus} />
+
+      {/* Right side: avatar stack + connection badge */}
+      <div className="flex items-center gap-4 shrink-0">
+        <CollaboratorAvatars provider={provider} />
+        <ConnectionBadge status={wsStatus} />
+      </div>
     </header>
   )
 }
@@ -179,6 +352,31 @@ function CollaborativeEditor({ provider, ydoc, wsStatus, userName, cursorColor }
     }
   }, [editor, userName, cursorColor])
 
+  // Typing indicator — set typing:true on every local doc update,
+  // clear it after 1.5s of inactivity. Uses ydoc observer so it only
+  // fires on actual content changes, not cursor moves or remote updates.
+  useEffect(() => {
+    let idleTimer: ReturnType<typeof setTimeout>
+
+    const onUpdate = (_: any, transaction: any) => {
+      // Only react to local transactions (the current user typing)
+      if (!transaction.local) return
+
+      provider.awareness.setLocalStateField('typing', true)
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        provider.awareness.setLocalStateField('typing', false)
+      }, 1500)
+    }
+
+    ydoc.on('update', onUpdate)
+    return () => {
+      ydoc.off('update', onUpdate)
+      clearTimeout(idleTimer)
+      provider.awareness.setLocalStateField('typing', false)
+    }
+  }, [ydoc, provider])
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-12 relative">
       {wsStatus === 'disconnected' && (
@@ -207,6 +405,7 @@ export function DocumentEditorPage() {
   const authUser = useAppSelector((s) => s.auth.user)
   const userName = authUser?.name ?? 'Anonymous'
   const userId = authUser?.id ?? ''
+  const avatarUrl = authUser?.avatar_url ?? null
   const cursorColor = useMemo(() => colorFromUserId(userId), [userId])
 
   const { data: board, isLoading: isBoardLoading, isError: isBoardError } = useBoard(boardId)
@@ -271,12 +470,17 @@ export function DocumentEditorPage() {
 
     provider.connect()
 
+    // Full identity in awareness — name + color for cursors, avatar_url for
+    // the topbar avatar stack on every other connected client's screen.
+    const awarenessPayload: AwarenessUser = {
+      name: userName,
+      color: cursorColor,
+      avatar_url: avatarUrl,
+    }
+
     const timeout = setTimeout(() => {
       if (provider.awareness) {
-        provider.awareness.setLocalStateField('user', {
-          name: userName,
-          color: cursorColor,
-        })
+        provider.awareness.setLocalStateField('user', awarenessPayload)
         console.log(`[Awareness] Set for ${userName}`)
       }
     }, 250)
@@ -284,10 +488,7 @@ export function DocumentEditorPage() {
     provider.awareness.on('change', ({ added }: { added: number[] }) => {
       if (added.length > 0) {
         setTimeout(() => {
-          provider.awareness.setLocalStateField('user', {
-            name: userName,
-            color: cursorColor,
-          })
+          provider.awareness.setLocalStateField('user', awarenessPayload)
         }, 500)
       }
     })
@@ -295,18 +496,11 @@ export function DocumentEditorPage() {
     setReadyProvider(provider)
 
     // ── Ghost cursor fix ───────────────────────────────────────────────────
-    // useEffect cleanup (return fn) does NOT fire on page refresh or tab
-    // close — the browser just kills the JS context. Without an explicit
-    // null broadcast, the Yjs awareness entry for this client stays alive
-    // on the server and on every other connected client, appearing as a
-    // ghost cursor until their awareness TTL expires.
-    //
-    // The beforeunload listener fires synchronously before the page unloads,
-    // giving us one last chance to broadcast setLocalState(null) over the
-    // still-open WebSocket. This covers refresh + tab close.
-    //
-    // The cleanup return fn still handles normal SPA navigation (back button,
-    // route change) where React unmounts the component gracefully.
+    // useEffect cleanup does NOT fire on page refresh or tab close.
+    // beforeunload fires synchronously before unload, giving us one last
+    // chance to broadcast null awareness while the socket is still open.
+    // The cleanup return fn handles normal SPA navigation (route changes).
+    // setLocalState(null) must come BEFORE disconnect.
     // ──────────────────────────────────────────────────────────────────────
     const handleBeforeUnload = () => {
       provider.awareness.setLocalState(null)
@@ -316,8 +510,6 @@ export function DocumentEditorPage() {
     return () => {
       clearTimeout(timeout)
       window.removeEventListener('beforeunload', handleBeforeUnload)
-      // setLocalState(null) BEFORE disconnect — once the socket closes
-      // the broadcast can't reach anyone.
       provider.awareness.setLocalState(null)
       provider.disconnect()
       provider.destroy()
@@ -325,16 +517,17 @@ export function DocumentEditorPage() {
       setReadyProvider(null)
       setWsStatus('connecting')
     }
-  }, [tokenData, snapshotData, documentId, userName, cursorColor])
+  }, [tokenData, snapshotData, documentId, userName, cursorColor, avatarUrl])
 
-  // Keep awareness in sync if name/color changes mid-session
+  // Keep awareness in sync if name/color/avatar changes mid-session
   useEffect(() => {
     if (!readyProvider) return
     readyProvider.awareness.setLocalStateField('user', {
       name: userName,
       color: cursorColor,
+      avatar_url: avatarUrl,
     })
-  }, [readyProvider, userName, cursorColor])
+  }, [readyProvider, userName, cursorColor, avatarUrl])
 
   const handleBack = useCallback(() => {
     navigate(`/${workspaceId}/boards/${boardId}`)
@@ -373,6 +566,7 @@ export function DocumentEditorPage() {
         cardTitle={card?.title ?? '…'}
         wsStatus={wsStatus}
         onBack={handleBack}
+        provider={readyProvider}
       />
       <div className="flex-1 overflow-y-auto">
         {isBootstrapping ? <EditorSkeleton /> : (

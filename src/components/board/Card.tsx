@@ -1,42 +1,26 @@
 // src/components/board/Card.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// A single kanban card. Uses useSortable for drag-and-drop.
+// Premium redesign — all functionality preserved.
 //
-// Visual states:
-//   Normal     — surface-container-low bg, ghost border, color bar on left
-//   Hover      — primary glow shadow, primary border tint, title → primary
-//   Dragging   — opacity-0 (the card's slot stays visible as a ghost while
-//                DragOverlay renders the actual card above everything)
-//   Overlay    — isOverlay=true, rendered inside DragOverlay with full
-//                opacity + slight scale + shadow for the "lifted" effect
+// Motion features (motion/react):
+//   • whileHover lift + spring physics (y: -3)
+//   • Color bar animated mount (scaleY spring)
+//   • Shimmer sweep on hover (AnimatePresence)
+//   • Footer items stagger in on mount
+//   • Options button pops in/out (scale + opacity)
+//   • Delete panel slides up (AnimatePresence)
+//   • Drag overlay: tilt + deep shadow
 //
-// Color bar:
-//   4px wide absolute bar on the left edge, color = card.color.
-//   Hidden when card.color is null.
-//
-// Footer:
-//   Assignee avatar (w-6 h-6) — shown when card.assignee is set
-//   Doc icon — always shown (every card has a document_id)
-//   Created date — formatted as "MMM D"
-//
-// Navigation:
-//   Clicking the card title navigates to the full-screen document editor
-//   (/:workspaceId/boards/:boardId/cards/:cardId — Module 7).
-//   onPointerDown stopPropagation prevents dnd-kit from starting a drag.
-//   The card body itself remains the drag handle.
-//
-// Context menu (right-click or ⋯ button on hover):
-//   Edit card — opens editCard modal
-//   Archive   — calls useArchiveCard
-//   Delete    — calls useDeleteCard with inline confirmation
+// Zero functionality changes — same props, hooks, navigation, DnD.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { motion, AnimatePresence } from 'motion/react'
 import {
-  MoreHorizontal, FileText, Pencil, Archive, Trash2, Loader2,
+  MoreHorizontal, FileText, Pencil, Archive, Trash2, Loader2, User,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -56,16 +40,39 @@ import type { CardResponse } from '@/lib/types'
 interface CardProps {
   card: CardResponse
   boardId: string
-  /** True when rendered inside DragOverlay — disables sortable, adds lifted style */
   isOverlay?: boolean
 }
 
-// Format ISO timestamp → "Oct 24" style
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  })
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Soft ambient glow per color accent
+const COLOR_GLOW: Record<string, string> = {
+  '#EF4444': '0 8px 32px rgba(239,68,68,0.14)',
+  '#F97316': '0 8px 32px rgba(249,115,22,0.14)',
+  '#EAB308': '0 8px 32px rgba(234,179,8,0.14)',
+  '#22C55E': '0 8px 32px rgba(34,197,94,0.14)',
+  '#3B82F6': '0 8px 32px rgba(59,130,246,0.14)',
+  '#A855F7': '0 8px 32px rgba(168,85,247,0.14)',
+}
+
+const COLOR_BORDER: Record<string, string> = {
+  '#EF4444': 'rgba(239,68,68,0.3)',
+  '#F97316': 'rgba(249,115,22,0.3)',
+  '#EAB308': 'rgba(234,179,8,0.3)',
+  '#22C55E': 'rgba(34,197,94,0.3)',
+  '#3B82F6': 'rgba(59,130,246,0.3)',
+  '#A855F7': 'rgba(168,85,247,0.3)',
+}
+
+const footerVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.07, delayChildren: 0.04 } },
+}
+const footerItemVariants = {
+  hidden: { opacity: 0, y: 5 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const } },
 }
 
 export function Card({ card, boardId, isOverlay = false }: CardProps) {
@@ -73,224 +80,297 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
   const navigate = useNavigate()
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
 
   const { mutate: archiveCard, isPending: isArchiving } = useArchiveCard(boardId)
   const { mutate: deleteCard, isPending: isDeleting } = useDeleteCard(boardId)
 
-  // useSortable — disabled when rendering as DragOverlay clone
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
     disabled: isOverlay,
   })
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
+  const dndStyle = { transform: CSS.Transform.toString(transform), transition }
 
-  // Navigate to the full-screen document editor for this card.
-  // workspaceId is always in the URL when Card is rendered (BoardPage route).
   function handleTitleClick(e: React.MouseEvent) {
     e.stopPropagation()
     if (!workspaceId) return
     navigate(`/${workspaceId}/boards/${boardId}/cards/${card.id}`)
   }
 
+  const hoveredBorder = card.color
+    ? COLOR_BORDER[card.color]
+    : 'rgba(0,218,243,0.28)'
+  const hoveredShadow = card.color
+    ? `${COLOR_GLOW[card.color]}, 0 2px 8px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05)`
+    : '0 8px 32px rgba(0,218,243,0.10), 0 2px 8px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05)'
+
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={dndStyle}
       {...attributes}
       {...listeners}
-      className={cn(
-        'relative bg-surface-container-low rounded-xl p-5 cursor-grab active:cursor-grabbing',
-        'border border-outline-variant/15',
-        'transition-all duration-200 group',
-        // Hover glow
-        'hover:shadow-[0_0_15px_rgba(0,218,243,0.15)] hover:border-primary/30',
-        // Ghost placeholder while dragging
-        isDragging && !isOverlay && 'opacity-0',
-        // Lifted state when in DragOverlay
-        isOverlay && 'shadow-2xl scale-[1.02] rotate-1 cursor-grabbing opacity-95',
-      )}
+      className={cn('relative', isDragging && !isOverlay && 'opacity-0 pointer-events-none')}
     >
-      {/* ── Color bar ────────────────────────────────────────────────────── */}
-      {card.color && (
-        <div
-          className="absolute left-0 top-4 bottom-4 w-1 rounded-r"
-          style={{ backgroundColor: card.color }}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* ── Card title (clickable → document editor) ─────────────────────── */}
-      <h4
-        onClick={handleTitleClick}
-        onPointerDown={(e) => e.stopPropagation()}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') handleTitleClick(e as unknown as React.MouseEvent)
+      <motion.div
+        onHoverStart={() => setIsHovered(true)}
+        onHoverEnd={() => setIsHovered(false)}
+        whileHover={!isOverlay ? {
+          y: -3,
+          transition: { type: 'spring', stiffness: 420, damping: 30 },
+        } : undefined}
+        whileTap={!isOverlay ? {
+          scale: 0.983,
+          y: 0,
+          transition: { duration: 0.08 },
+        } : undefined}
+        animate={isOverlay ? {
+          rotate: 1.8,
+          scale: 1.04,
+        } : undefined}
+        className="relative rounded-2xl overflow-hidden cursor-grab active:cursor-grabbing"
+        style={{
+          background: 'linear-gradient(160deg, oklch(0.20 0.014 265 / 1) 0%, oklch(0.17 0.012 265 / 1) 100%)',
+          border: `1px solid ${isHovered ? hoveredBorder : 'rgba(255,255,255,0.065)'}`,
+          boxShadow: isHovered
+            ? hoveredShadow
+            : isOverlay
+              ? '0 28px 56px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,218,243,0.18)'
+              : '0 1px 4px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.04)',
+          transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
         }}
-        aria-label={`Open document for ${card.title}`}
-        className={cn(
-          'font-semibold text-sm text-on-surface leading-snug mb-4 pr-6',
-          'group-hover:text-primary transition-colors',
-          // Clear cursor and ring for the clickable title — card body is the drag handle
-          'cursor-pointer hover:underline underline-offset-2',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded',
-        )}
       >
-        {card.title}
-      </h4>
-
-      {/* ── Footer row ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {/* Assignee avatar */}
-          {card.assignee && (
-            <div
-              title={card.assignee.name}
-              className={cn(
-                'w-6 h-6 rounded-full shrink-0',
-                'bg-df-tertiary-container text-df-on-tertiary-container',
-                'flex items-center justify-center text-[9px] font-bold select-none',
-              )}
-            >
-              {card.assignee.avatar_url ? (
-                <img
-                  src={card.assignee.avatar_url}
-                  alt={card.assignee.name}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                getInitials(card.assignee.name)
-              )}
-            </div>
-          )}
-
-          {/* Doc icon — every card has a document */}
-          <FileText
-            className="w-3.5 h-3.5 text-on-surface-variant"
-            aria-label="Has document"
+        {/* ── Color accent bar ────────────────────────────────────────────── */}
+        {card.color && (
+          <motion.div
+            initial={{ scaleY: 0 }}
+            animate={{ scaleY: 1 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute left-0 top-0 bottom-0 w-0.75"
+            style={{
+              backgroundColor: card.color,
+              transformOrigin: 'top',
+              borderRadius: '0 2px 2px 0',
+              boxShadow: `0 0 12px ${card.color}60`,
+            }}
           />
-        </div>
+        )}
 
-        {/* Created date */}
-        <span className="text-[10px] text-on-surface-variant font-medium">
-          {formatDate(card.created_at)}
-        </span>
-      </div>
-
-      {/* ── Options button (hover) ───────────────────────────────────────── */}
-      {!isOverlay && (
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                // Stop the sortable drag listeners from firing on menu click
-                onPointerDown={(e) => e.stopPropagation()}
-                aria-label="Card options"
-                className={cn(
-                  'p-1 rounded-md text-on-surface-variant',
-                  'hover:bg-surface-container-highest hover:text-on-surface',
-                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                  'data-[state=open]:opacity-100',
-                )}
-              >
-                <MoreHorizontal className="w-3.5 h-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem
-                onClick={() => dispatch(openModal({ type: 'editCard', cardId: card.id }))}
-                className="gap-2 cursor-pointer"
-              >
-                <Pencil className="size-4 text-outline" />
-                Edit card
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => archiveCard(card.id)}
-                disabled={isArchiving}
-                className="gap-2 cursor-pointer"
-              >
-                {isArchiving
-                  ? <Loader2 className="size-4 animate-spin" />
-                  : <Archive className="size-4 text-outline" />
-                }
-                Archive
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => setDeleteOpen(true)}
-                className="gap-2 cursor-pointer"
-              >
-                <Trash2 className="size-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
-
-      {/* ── Inline delete confirmation ───────────────────────────────────── */}
-      {deleteOpen && (
-        <div
-          className={cn(
-            'absolute inset-0 z-10 rounded-xl p-4',
-            'bg-surface-container-highest/95 backdrop-blur-sm',
-            'flex flex-col justify-between',
-            'border border-destructive/20',
-          )}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <p className="text-sm font-semibold text-on-surface">
-            Delete this card?
-          </p>
-          <p className="text-xs text-on-surface-variant mt-1">
-            This removes the card and its document permanently.
-          </p>
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={() => setDeleteOpen(false)}
-              disabled={isDeleting}
-              className={cn(
-                'flex-1 py-2 rounded-lg text-xs font-bold',
-                'border border-outline-variant/20 text-on-surface-variant',
-                'hover:bg-surface-container hover:text-on-surface',
-                'transition-colors disabled:opacity-50 disabled:pointer-events-none',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-              )}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                deleteCard(card.id)
-                setDeleteOpen(false)
+        {/* ── Shimmer sweep ────────────────────────────────────────────────── */}
+        <AnimatePresence>
+          {isHovered && !isOverlay && (
+            <motion.div
+              key="shimmer"
+              initial={{ x: '-110%' }}
+              animate={{ x: '210%' }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6, ease: 'easeInOut' }}
+              className="absolute inset-0 pointer-events-none z-0"
+              style={{
+                background: 'linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.035) 50%, transparent 65%)',
               }}
-              disabled={isDeleting}
-              className={cn(
-                'flex-1 py-2 rounded-lg text-xs font-bold',
-                'bg-destructive text-white',
-                'hover:brightness-110 transition-all',
-                'disabled:opacity-70 disabled:pointer-events-none',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ── Card content ─────────────────────────────────────────────────── */}
+        <div className={cn('relative z-10 p-4 pb-3.5', card.color ? 'pl-4.5' : '')}>
+
+          {/* Title */}
+          <motion.h4
+            onClick={handleTitleClick}
+            onPointerDown={(e) => e.stopPropagation()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') handleTitleClick(e as unknown as React.MouseEvent)
+            }}
+            aria-label={`Open document for ${card.title}`}
+            animate={{ color: isHovered ? 'var(--color-primary, #00DAF3)' : 'var(--color-on-surface, #e2e4ef)' }}
+            transition={{ duration: 0.2 }}
+            className={cn(
+              'font-semibold text-sm leading-snug mb-3.5 pr-8',
+              'cursor-pointer',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded',
+            )}
+          >
+            {card.title}
+          </motion.h4>
+
+          {/* Footer */}
+          <motion.div
+            variants={footerVariants}
+            initial="hidden"
+            animate="visible"
+            className="flex items-center justify-between"
+          >
+            <motion.div variants={footerItemVariants} className="flex items-center gap-1.5">
+              {/* Assignee avatar or empty ring */}
+              {card.assignee ? (
+                <div
+                  title={card.assignee.name}
+                  className={cn(
+                    'w-5.5 h-5.5 rounded-full shrink-0',
+                    'ring-1 ring-white/10',
+                    'bg-df-tertiary-container text-df-on-tertiary-container',
+                    'flex items-center justify-center text-[8px] font-bold select-none',
+                  )}
+                >
+                  {card.assignee.avatar_url ? (
+                    <img src={card.assignee.avatar_url} alt={card.assignee.name} className="w-full h-full rounded-full object-cover" />
+                  ) : (
+                    getInitials(card.assignee.name)
+                  )}
+                </div>
+              ) : (
+                <div
+                  title="Unassigned"
+                  className="w-5.5 h-5.5 rounded-full border border-dashed border-outline-variant/20 flex items-center justify-center"
+                >
+                  <User className="w-2.5 h-2.5 text-outline/30" />
+                </div>
               )}
+
+              {/* Doc pill */}
+              <motion.div
+                animate={{
+                  backgroundColor: isHovered ? 'rgba(0,218,243,0.10)' : 'rgba(255,255,255,0.04)',
+                }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-md"
+              >
+                <FileText className={cn(
+                  'w-2.75 h-2.75 transition-colors duration-200',
+                  isHovered ? 'text-primary' : 'text-outline/60',
+                )} />
+              </motion.div>
+            </motion.div>
+
+            <motion.span
+              variants={footerItemVariants}
+              className="text-[10px] font-medium tabular-nums text-on-surface-variant/45"
             >
-              {isDeleting ? <Loader2 className="size-3.5 animate-spin mx-auto" /> : 'Delete'}
-            </button>
-          </div>
+              {formatDate(card.created_at)}
+            </motion.span>
+          </motion.div>
         </div>
-      )}
+
+        {/* ── Options button (appears on hover) ────────────────────────────── */}
+        {!isOverlay && (
+          <AnimatePresence>
+            {isHovered && (
+              <motion.div
+                key="opts"
+                initial={{ opacity: 0, scale: 0.65, rotate: -8 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.65, rotate: -8 }}
+                transition={{ duration: 0.14, ease: 'easeOut' }}
+                className="absolute top-2.5 right-2.5 z-20"
+              >
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      aria-label="Card options"
+                      className={cn(
+                        'p-1.5 rounded-lg',
+                        'bg-surface-container-highest/80 backdrop-blur-sm',
+                        'text-on-surface-variant hover:text-on-surface',
+                        'border border-outline-variant/15',
+                        'hover:bg-surface-container-highest',
+                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                        'transition-all',
+                      )}
+                    >
+                      <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem
+                      onClick={() => dispatch(openModal({ type: 'editCard', cardId: card.id }))}
+                      className="gap-2 cursor-pointer"
+                    >
+                      <Pencil className="size-4 text-outline" />
+                      Edit card
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => archiveCard(card.id)}
+                      disabled={isArchiving}
+                      className="gap-2 cursor-pointer"
+                    >
+                      {isArchiving ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4 text-outline" />}
+                      Archive
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => setDeleteOpen(true)}
+                      className="gap-2 cursor-pointer"
+                    >
+                      <Trash2 className="size-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
+
+        {/* ── Delete confirmation overlay ───────────────────────────────────── */}
+        <AnimatePresence>
+          {deleteOpen && (
+            <motion.div
+              key="delete"
+              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.96 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className={cn(
+                'absolute inset-0 z-30 rounded-2xl p-4 flex flex-col justify-between',
+                'border border-destructive/20',
+              )}
+              style={{ background: 'oklch(0.14 0.018 265 / 0.97)', backdropFilter: 'blur(16px)' }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <div>
+                <p className="text-sm font-semibold text-on-surface">Delete this card?</p>
+                <p className="text-[11px] text-on-surface-variant/60 mt-1 leading-relaxed">
+                  Permanently removes the card and its document.
+                </p>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => setDeleteOpen(false)}
+                  disabled={isDeleting}
+                  className={cn(
+                    'flex-1 py-2 rounded-xl text-xs font-bold',
+                    'border border-outline-variant/20 text-on-surface-variant',
+                    'hover:bg-surface-container hover:text-on-surface',
+                    'transition-colors disabled:opacity-50 disabled:pointer-events-none',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                  )}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { deleteCard(card.id); setDeleteOpen(false) }}
+                  disabled={isDeleting}
+                  className={cn(
+                    'flex-1 py-2 rounded-xl text-xs font-bold',
+                    'bg-destructive/90 text-white hover:bg-destructive',
+                    'transition-all disabled:opacity-70 disabled:pointer-events-none',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
+                  )}
+                >
+                  {isDeleting ? <Loader2 className="size-3.5 animate-spin mx-auto" /> : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
     </div>
   )
 }

@@ -189,7 +189,7 @@ function CollaboratorAvatar({ user, index }: { user: ConnectedUser; index: numbe
         cursor: 'default',
       }}
       title={user.name}
-      className="hover:!z-50 hover:scale-105"
+      className="hover:z-50! hover:scale-105"
     >
       {user.avatar_url && !imgFailed ? (
         <img

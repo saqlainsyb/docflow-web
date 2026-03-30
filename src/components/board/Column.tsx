@@ -1,25 +1,21 @@
 // src/components/board/Column.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Premium redesign — all functionality preserved.
+// REDESIGNED: Premium glass column — "Obsidian Studio" aesthetic.
 //
-// Motion features (motion/react):
-//   • Column mounts with a spring fade-up (initial y:16 → 0, staggered by index)
-//   • Card list children stagger in via variants (delayChildren + staggerChildren)
-//   • "Add Card" button pulses a gentle glow on hover (scale spring)
-//   • Column header count badge animates value changes (layout animation)
-//   • Options button rotates in with spring on hover
-//   • Delete dialog: AnimatePresence overlay with blur backdrop
-//   • Empty state: subtle breathing pulse animation
-//   • Drop zone highlight: AnimatePresence colored ring when dragging over
+// Design features:
+//   • True glassmorphism: backdrop-blur + gradient surfaces + inner glow edge
+//   • Per-column accent color system (passed from BoardPage)
+//   • Header: editorial ALL-CAPS title with pulsing accent dot
+//   • Card count badge changes character based on load (few/many)
+//   • Drop zone: animated colored rim + surface tint on hover
+//   • Empty state: breathing icon with invitation text
+//   • Add card button: dashed ghost → solid on hover with spring scale
+//   • Delete dialog: animated confirmation inside Radix Dialog
+//   • Column body scrolls independently with invisible scrollbar
+//   • Motion: mount stagger, count badge layout, options menu entrance
 //
-// Visual design:
-//   • True glass morphism: layered bg + backdrop-blur + inner light edge
-//   • Subtle gradient top-to-bottom within the column surface
-//   • Column header uses editorial ALL-CAPS tracking with a colored dot accent
-//   • Card count badge shifts color based on load (few = dim, many = accent)
-//   • "Add Card" button: dashed → solid on hover with spring scale
-//
-// Zero functionality changes — same props, hooks, DnD architecture.
+// All prop-surface and functionality identical to previous version.
+// New prop: accentColor: { dot: string; glow: string } from BoardPage.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
@@ -46,57 +42,60 @@ import { Card } from '@/components/board/Card'
 import { cn } from '@/lib/utils'
 import type { ColumnWithCards } from '@/lib/types'
 
+interface AccentColor {
+  dot: string
+  glow: string
+}
+
 interface ColumnProps {
   column: ColumnWithCards
   boardId: string
   onAddCard: () => void
   onAddColumn: () => void
   index?: number
+  accentColor?: AccentColor
 }
 
-// Stagger children (card list) in on column mount
+// ── Default accent (cyan) ─────────────────────────────────────────────────────
+const DEFAULT_ACCENT: AccentColor = { dot: '#00DAF3', glow: 'rgba(0,218,243,0.18)' }
+
+// ── Card stagger variants ─────────────────────────────────────────────────────
 const listVariants = {
   hidden: {},
   visible: {
     transition: {
-      staggerChildren: 0.055,
-      delayChildren: 0.12,
+      staggerChildren: 0.05,
+      delayChildren: 0.1,
     },
   },
 }
 
-const cardItemVariants = {
-  hidden: { opacity: 0, y: 10, scale: 0.97 },
+const cardVariants = {
+  hidden: { opacity: 0, y: 8, scale: 0.975 },
   visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
+    opacity: 1, y: 0, scale: 1,
     transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const },
   },
 }
 
-// Dot color cycles through a subtle palette per column (by index mod)
-const COLUMN_DOT_COLORS = [
-  '#00DAF3', // cyan primary
-  '#A855F7', // purple
-  '#22C55E', // green
-  '#F97316', // orange
-  '#3B82F6', // blue
-  '#EAB308', // yellow
-]
+// ── Column ────────────────────────────────────────────────────────────────────
 
-export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
+export function Column({
+  column,
+  boardId,
+  onAddCard,
+  index = 0,
+  accentColor = DEFAULT_ACCENT,
+}: ColumnProps) {
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [isHeaderHovered, setIsHeaderHovered] = useState(false)
+  const [headerHovered, setHeaderHovered] = useState(false)
 
   const { mutate: deleteColumn, isPending: isDeleting } = useDeleteColumn(boardId)
-
-  // Make column a droppable zone so cards can be dropped into empty columns
   const { isOver, setNodeRef: setDropRef } = useDroppable({ id: column.id })
 
-  const dotColor = COLUMN_DOT_COLORS[index % COLUMN_DOT_COLORS.length]
   const cardCount = column.cards.length
-  const countIsHigh = cardCount >= 5
+  const hasCards = cardCount > 0
+  const { dot, glow } = accentColor
 
   function handleDelete() {
     deleteColumn(column.id, { onSuccess: () => setDeleteOpen(false) })
@@ -104,101 +103,115 @@ export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, y: 18, scale: 0.975 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{
-          duration: 0.42,
-          delay: index * 0.07,
-          ease: [0.22, 1, 0.36, 1],
-        }}
+      <div
         ref={setDropRef}
-        className="shrink-0 w-75 flex flex-col rounded-2xl h-full"
+        className="shrink-0 w-72 flex flex-col rounded-2xl relative"
         style={{
+          // Column height: fills board canvas, max 80vh to leave scroll room
+          maxHeight: 'calc(100vh - 120px)',
+          minHeight: '160px',
           background: isOver
-            ? 'linear-gradient(175deg, oklch(0.21 0.018 265 / 0.85) 0%, oklch(0.18 0.015 265 / 0.85) 100%)'
-            : 'linear-gradient(175deg, oklch(0.19 0.015 265 / 0.72) 0%, oklch(0.16 0.012 265 / 0.72) 100%)',
-          backdropFilter: 'blur(20px) saturate(160%)',
+            ? `linear-gradient(175deg, oklch(0.21 0.020 265 / 0.9) 0%, oklch(0.18 0.017 265 / 0.88) 100%)`
+            : `linear-gradient(175deg, oklch(0.195 0.016 265 / 0.82) 0%, oklch(0.165 0.014 265 / 0.80) 100%)`,
+          backdropFilter: 'blur(22px) saturate(160%)',
           border: isOver
-            ? `1px solid ${dotColor}44`
-            : '1px solid rgba(255,255,255,0.07)',
+            ? `1px solid ${dot}44`
+            : '1px solid rgba(255,255,255,0.065)',
           boxShadow: isOver
-            ? `0 0 0 2px ${dotColor}22, 0 8px 32px rgba(0,0,0,0.3)`
-            : '0 4px 24px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.05)',
-          transition: 'background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease',
+            ? `0 0 0 2px ${dot}20, 0 8px 40px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.07)`
+            : '0 4px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.055)',
+          transition: 'background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease',
         }}
       >
-        {/* ── Inner top-edge light ──────────────────────────────────────────── */}
+
+        {/* Inner top-edge light seam */}
         <div
-          className="absolute top-0 left-6 right-6 h-px rounded-full pointer-events-none"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)' }}
+          className="absolute top-0 left-8 right-8 h-px pointer-events-none rounded-full"
+          style={{
+            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)',
+          }}
         />
 
         {/* ── Column header ─────────────────────────────────────────────────── */}
         <div
-          className="relative flex items-center justify-between px-4 pt-4 pb-3"
-          onMouseEnter={() => setIsHeaderHovered(true)}
-          onMouseLeave={() => setIsHeaderHovered(false)}
+          className="flex items-center justify-between px-4 pt-4 pb-3 relative"
+          onMouseEnter={() => setHeaderHovered(true)}
+          onMouseLeave={() => setHeaderHovered(false)}
         >
-          {/* Dot accent + title */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            {/* Colored identity dot */}
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            {/* Accent dot */}
             <motion.div
               animate={{
-                scale: isHeaderHovered ? 1.4 : 1,
-                opacity: isHeaderHovered ? 1 : 0.7,
+                scale: headerHovered ? 1.5 : 1,
+                opacity: headerHovered ? 1 : 0.65,
               }}
-              transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 22 }}
               className="w-2 h-2 rounded-full shrink-0"
               style={{
-                backgroundColor: dotColor,
-                boxShadow: isHeaderHovered ? `0 0 8px ${dotColor}` : 'none',
+                backgroundColor: dot,
+                boxShadow: headerHovered ? `0 0 8px ${dot}` : 'none',
               }}
             />
 
-            <h3 className="font-display font-bold text-[11px] uppercase tracking-[0.12em] text-on-surface-variant truncate">
+            {/* Title */}
+            <h3
+              className="font-bold text-[11px] uppercase truncate"
+              style={{
+                color: 'rgba(255,255,255,0.55)',
+                letterSpacing: '0.12em',
+                fontFamily: 'var(--df-font-display)',
+              }}
+            >
               {column.title}
             </h3>
 
             {/* Card count badge */}
             <motion.div
               layout
-              className={cn(
-                'shrink-0 min-w-5 h-5 px-1.5 rounded-full',
-                'flex items-center justify-center',
-                'text-[10px] font-bold tabular-nums',
-                'transition-colors duration-300',
-              )}
+              className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums"
               style={{
-                background: countIsHigh ? `${dotColor}22` : 'rgba(255,255,255,0.07)',
-                color: countIsHigh ? dotColor : 'rgba(255,255,255,0.4)',
-                border: countIsHigh ? `1px solid ${dotColor}30` : '1px solid rgba(255,255,255,0.08)',
+                background: hasCards ? `${dot}1A` : 'rgba(255,255,255,0.06)',
+                color: hasCards ? dot : 'rgba(255,255,255,0.28)',
+                border: hasCards ? `1px solid ${dot}28` : '1px solid rgba(255,255,255,0.07)',
+                transition: 'background 0.25s, color 0.25s, border-color 0.25s',
               }}
             >
               {cardCount}
             </motion.div>
           </div>
 
-          {/* Options menu */}
+          {/* Options — appears on header hover */}
           <AnimatePresence>
-            {isHeaderHovered && (
+            {headerHovered && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.7, rotate: -10 }}
+                initial={{ opacity: 0, scale: 0.65, rotate: -12 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                exit={{ opacity: 0, scale: 0.7, rotate: -10 }}
-                transition={{ duration: 0.15, ease: 'easeOut' }}
+                exit={{ opacity: 0, scale: 0.65, rotate: -12 }}
+                transition={{ duration: 0.14, ease: 'easeOut' }}
               >
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       className={cn(
-                        'p-1.5 rounded-lg text-on-surface-variant',
-                        'hover:bg-surface-container-highest/60 hover:text-on-surface',
-                        'border border-transparent hover:border-outline-variant/15',
+                        'p-1.5 rounded-lg transition-all',
                         'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                        'transition-all data-[state=open]:opacity-100',
                       )}
-                      aria-label={`Column options for ${column.title}`}
+                      style={{
+                        color: 'rgba(255,255,255,0.45)',
+                        background: 'transparent',
+                        border: '1px solid transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.10)'
+                        ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)'
+                      }}
+                      onMouseLeave={(e) => {
+                        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = 'transparent'
+                        ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.45)'
+                      }}
+                      aria-label={`Options for ${column.title}`}
                     >
                       <MoreHorizontal className="w-4 h-4" />
                     </button>
@@ -224,16 +237,26 @@ export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
           </AnimatePresence>
         </div>
 
-        {/* ── Divider ───────────────────────────────────────────────────────── */}
+        {/* Subtle divider */}
         <div
           className="mx-4 h-px mb-3"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)' }}
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }}
         />
 
         {/* ── Card list ─────────────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto flex flex-col gap-2.5 px-3 pb-2 min-h-0 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:transparent">
+        <div
+          className="flex-1 overflow-y-auto flex flex-col gap-2 px-3 pb-2 min-h-0"
+          style={{
+            scrollbarWidth: 'none',
+            // Firefox
+          }}
+        >
+          <style>{`
+            .column-scroll::-webkit-scrollbar { display: none; }
+          `}</style>
+
           <AnimatePresence mode="popLayout">
-            {column.cards.length === 0 ? (
+            {!hasCards ? (
               // Empty state
               <motion.div
                 key="empty"
@@ -241,16 +264,16 @@ export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
-                className="flex flex-col items-center justify-center py-8 gap-2"
+                className="flex flex-col items-center justify-center py-10 gap-2.5"
               >
                 <motion.div
-                  animate={{ opacity: [0.3, 0.6, 0.3] }}
-                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                  animate={{ opacity: [0.25, 0.5, 0.25] }}
+                  transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
                 >
-                  <Layers className="w-7 h-7 text-on-surface-variant/30" />
+                  <Layers className="w-6 h-6" style={{ color: 'rgba(255,255,255,0.22)' }} />
                 </motion.div>
-                <p className="text-[11px] text-on-surface-variant/30 font-medium text-center">
-                  No cards yet
+                <p className="text-[11px] font-medium text-center" style={{ color: 'rgba(255,255,255,0.22)' }}>
+                  Drop cards here
                 </p>
               </motion.div>
             ) : (
@@ -259,10 +282,10 @@ export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
                 variants={listVariants}
                 initial="hidden"
                 animate="visible"
-                className="flex flex-col gap-2.5"
+                className="flex flex-col gap-2"
               >
                 {column.cards.map((card) => (
-                  <motion.div key={card.id} variants={cardItemVariants} layout>
+                  <motion.div key={card.id} variants={cardVariants} layout="position">
                     <Card card={card} boardId={boardId} />
                   </motion.div>
                 ))}
@@ -271,7 +294,7 @@ export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
           </AnimatePresence>
         </div>
 
-        {/* ── Drop zone highlight ring ──────────────────────────────────────── */}
+        {/* ── Drop zone highlight ring (only while dragging over) ────────────── */}
         <AnimatePresence>
           {isOver && (
             <motion.div
@@ -279,66 +302,77 @@ export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: 0.14 }}
               className="absolute inset-0 rounded-2xl pointer-events-none"
-              style={{ border: `2px solid ${dotColor}50`, boxShadow: `inset 0 0 24px ${dotColor}10` }}
+              style={{
+                border: `2px solid ${dot}55`,
+                boxShadow: `inset 0 0 30px ${dot}0A`,
+              }}
             />
           )}
         </AnimatePresence>
 
         {/* ── Add Card button ───────────────────────────────────────────────── */}
-        <div className="px-3 pt-2 pb-3">
+        <div className="px-3 pt-1.5 pb-3">
           <motion.button
             onClick={onAddCard}
             whileHover={{ scale: 1.015 }}
-            whileTap={{ scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            whileTap={{ scale: 0.975 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 26 }}
             className={cn(
-              'w-full flex items-center justify-center gap-2 py-3',
-              'rounded-xl text-sm font-semibold',
-              'text-on-surface-variant hover:text-on-surface',
-              'border border-dashed border-outline-variant/20 hover:border-outline-variant/40',
-              'hover:bg-white/3',
-              'transition-colors duration-200',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-              'group',
+              'w-full flex items-center justify-center gap-2 py-2.5',
+              'rounded-xl text-[11px] font-bold uppercase tracking-widest',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+              'transition-colors duration-200 group',
             )}
+            style={{
+              color: 'rgba(255,255,255,0.28)',
+              border: '1px dashed rgba(255,255,255,0.10)',
+              background: 'transparent',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLElement).style.color = dot
+              ;(e.currentTarget as HTMLElement).style.borderColor = `${dot}40`
+              ;(e.currentTarget as HTMLElement).style.background = `${dot}08`
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.28)'
+              ;(e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.10)'
+              ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+            }}
           >
             <motion.span
-              animate={{ rotate: 0 }}
+              className="inline-flex"
               whileHover={{ rotate: 90 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              className="inline-flex"
             >
-              <Plus className="w-3.5 h-3.5 group-hover:text-primary transition-colors" />
+              <Plus className="w-3.5 h-3.5" />
             </motion.span>
-            <span className="text-[12px] uppercase tracking-wider group-hover:text-primary transition-colors">
-              Add card
-            </span>
+            Add card
           </motion.button>
         </div>
-      </motion.div>
+      </div>
 
       {/* ── Delete confirmation dialog ─────────────────────────────────────── */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete column</DialogTitle>
+            <DialogTitle>Delete "{column.title}"?</DialogTitle>
             <DialogDescription>
-              <span className="font-semibold text-on-surface">{column.title}</span>
-              {' '}and all {cardCount} card{cardCount !== 1 ? 's' : ''} inside it will be permanently deleted. This cannot be undone.
+              This will permanently delete the column and all {cardCount} card{cardCount !== 1 ? 's' : ''} inside it.
+              This cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-2">
             <button
               onClick={() => setDeleteOpen(false)}
               disabled={isDeleting}
               className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium',
+                'flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold',
                 'border border-outline-variant/20 text-on-surface-variant',
                 'hover:bg-surface-container hover:text-on-surface',
-                'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                'disabled:opacity-50 disabled:pointer-events-none',
+                'transition-colors disabled:opacity-50',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
               )}
             >
               Cancel
@@ -347,15 +381,14 @@ export function Column({ column, boardId, onAddCard, index = 0 }: ColumnProps) {
               onClick={handleDelete}
               disabled={isDeleting}
               className={cn(
-                'px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2',
-                'bg-destructive/10 text-destructive',
-                'hover:bg-destructive hover:text-background',
-                'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
-                'disabled:opacity-40 disabled:pointer-events-none',
+                'flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold',
+                'bg-destructive text-white hover:bg-destructive/90',
+                'transition-all disabled:opacity-70',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
               )}
             >
               {isDeleting ? (
-                <><Loader2 className="size-4 animate-spin" />Deleting…</>
+                <Loader2 className="w-4 h-4 animate-spin mx-auto" />
               ) : (
                 'Delete column'
               )}

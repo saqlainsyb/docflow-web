@@ -1,29 +1,14 @@
+// src/components/ui/dialog.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Thin shadcn-style wrapper over Radix UI Dialog.
+// DialogOverlay is now exported so modals can use custom content containers
+// while still getting the standard backdrop blur overlay.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import * as React from 'react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-/**
- * Dialog
- *
- * Thin shadcn-style wrapper over Radix UI Dialog.
- * Styled with --df-* tokens to match the Docflow design system.
- *
- * Usage:
- *   <Dialog open={open} onOpenChange={setOpen}>
- *     <DialogTrigger asChild><Button>Open</Button></DialogTrigger>
- *     <DialogContent>
- *       <DialogHeader>
- *         <DialogTitle>Title</DialogTitle>
- *         <DialogDescription>Description</DialogDescription>
- *       </DialogHeader>
- *       … content …
- *       <DialogFooter>
- *         <Button>Confirm</Button>
- *       </DialogFooter>
- *     </DialogContent>
- *   </Dialog>
- */
 
 const Dialog = DialogPrimitive.Root
 const DialogTrigger = DialogPrimitive.Trigger
@@ -66,18 +51,12 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          // Positioning — centered in viewport
           'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
-          // Size
           'w-full max-w-md',
-          // Surface — glass morphism, matches modal spec
           'bg-surface-container-highest/95 backdrop-blur-xl',
           'border border-outline-variant/15 rounded-2xl',
-          // Shadow
           'shadow-ambient',
-          // Padding
           'p-8',
-          // Animations
           'duration-200',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
@@ -175,6 +154,7 @@ export {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogOverlay,
   DialogPortal,
   DialogTitle,
   DialogTrigger,

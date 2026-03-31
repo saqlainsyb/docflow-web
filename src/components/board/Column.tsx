@@ -1,26 +1,23 @@
 // src/components/board/Column.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// REDESIGNED: Premium glass column — "Obsidian Studio" aesthetic.
+// FIX: Column options menu no longer flickers / immediately closes.
 //
-// Design features:
-//   • True glassmorphism: backdrop-blur + gradient surfaces + inner glow edge
-//   • Per-column accent color system (passed from BoardPage)
-//   • Header: editorial ALL-CAPS title with pulsing accent dot
-//   • Card count badge changes character based on load (few/many)
-//   • Drop zone: animated colored rim + surface tint on hover
-//   • Empty state: breathing icon with invitation text
-//   • Add card button: dashed ghost → solid on hover with spring scale
-//   • Delete dialog: animated confirmation inside Radix Dialog
-//   • Column body scrolls independently with invisible scrollbar
-//   • Motion: mount stagger, count badge layout, options menu entrance
+// Root cause: wrapping <DropdownMenu> in <AnimatePresence> was unmounting the
+// trigger button the moment hover ended — even if the menu was open — which
+// caused Radix to close it immediately.
 //
-// All prop-surface and functionality identical to previous version.
-// New prop: accentColor: { dot: string; glow: string } from BoardPage.
+// Fix: the DropdownMenu + trigger are ALWAYS mounted. Visibility is controlled
+// purely through CSS opacity + pointer-events, so the DOM element is stable
+// throughout the menu's open lifecycle.
+//
+// Also added: Rename column dialog + board-consistent styling on all dialogs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import { MoreHorizontal, Plus, Trash2, Loader2, Layers } from 'lucide-react'
+import {
+  MoreHorizontal, Plus, Trash2, Loader2, Layers, Pencil, GripVertical,
+} from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import {
   DropdownMenu,
@@ -28,6 +25,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import {
   Dialog,
@@ -38,6 +36,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useDeleteColumn } from '@/hooks/useDeleteColumn'
+import { useRenameColumn } from '@/hooks/useRenameColumn'
 import { Card } from '@/components/board/Card'
 import { cn } from '@/lib/utils'
 import type { ColumnWithCards } from '@/lib/types'
@@ -56,17 +55,12 @@ interface ColumnProps {
   accentColor?: AccentColor
 }
 
-// ── Default accent (cyan) ─────────────────────────────────────────────────────
 const DEFAULT_ACCENT: AccentColor = { dot: '#00DAF3', glow: 'rgba(0,218,243,0.18)' }
 
-// ── Card stagger variants ─────────────────────────────────────────────────────
 const listVariants = {
   hidden: {},
   visible: {
-    transition: {
-      staggerChildren: 0.05,
-      delayChildren: 0.1,
-    },
+    transition: { staggerChildren: 0.05, delayChildren: 0.1 },
   },
 }
 
@@ -76,6 +70,19 @@ const cardVariants = {
     opacity: 1, y: 0, scale: 1,
     transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const },
   },
+}
+
+// ── Shared dialog styles ──────────────────────────────────────────────────────
+const DIALOG_OVERLAY_STYLE = {
+  background: 'oklch(0.10 0.015 265 / 0.85)',
+  backdropFilter: 'blur(8px)',
+}
+
+const DIALOG_CONTENT_STYLE = {
+  background: 'linear-gradient(160deg, oklch(0.175 0.018 265) 0%, oklch(0.155 0.014 265) 100%)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  boxShadow: '0 32px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
+  borderRadius: '1.25rem',
 }
 
 // ── Column ────────────────────────────────────────────────────────────────────
@@ -88,17 +95,46 @@ export function Column({
   accentColor = DEFAULT_ACCENT,
 }: ColumnProps) {
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState(column.title)
   const [headerHovered, setHeaderHovered] = useState(false)
+  // Track if the dropdown itself is open so we keep the button visible
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   const { mutate: deleteColumn, isPending: isDeleting } = useDeleteColumn(boardId)
+  const { mutate: renameColumn, isPending: isRenaming } = useRenameColumn(boardId)
   const { isOver, setNodeRef: setDropRef } = useDroppable({ id: column.id })
 
   const cardCount = column.cards.length
   const hasCards = cardCount > 0
-  const { dot, glow } = accentColor
+  const { dot } = accentColor
+
+  // Button is visible when header is hovered OR menu is open
+  const showMenuButton = headerHovered || menuOpen
 
   function handleDelete() {
     deleteColumn(column.id, { onSuccess: () => setDeleteOpen(false) })
+  }
+
+  function handleRename() {
+    const trimmed = renameValue.trim()
+    if (!trimmed || trimmed === column.title) {
+      setRenameOpen(false)
+      return
+    }
+    renameColumn(
+      { columnId: column.id, title: trimmed },
+      { onSuccess: () => setRenameOpen(false) },
+    )
+  }
+
+  function openRename() {
+    setRenameValue(column.title)
+    setRenameOpen(true)
+    // Focus the input after the dialog opens
+    setTimeout(() => renameInputRef.current?.select(), 80)
   }
 
   return (
@@ -107,7 +143,6 @@ export function Column({
         ref={setDropRef}
         className="shrink-0 w-72 flex flex-col rounded-2xl relative"
         style={{
-          // Column height: fills board canvas, max 80vh to leave scroll room
           maxHeight: 'calc(100vh - 120px)',
           minHeight: '160px',
           background: isOver
@@ -123,7 +158,6 @@ export function Column({
           transition: 'background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease',
         }}
       >
-
         {/* Inner top-edge light seam */}
         <div
           className="absolute top-0 left-8 right-8 h-px pointer-events-none rounded-full"
@@ -132,7 +166,7 @@ export function Column({
           }}
         />
 
-        {/* ── Column header ─────────────────────────────────────────────────── */}
+        {/* ── Column header ──────────────────────────────────────────────── */}
         <div
           className="flex items-center justify-between px-4 pt-4 pb-3 relative"
           onMouseEnter={() => setHeaderHovered(true)}
@@ -180,61 +214,110 @@ export function Column({
             </motion.div>
           </div>
 
-          {/* Options — appears on header hover */}
-          <AnimatePresence>
-            {headerHovered && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.65, rotate: -12 }}
-                animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                exit={{ opacity: 0, scale: 0.65, rotate: -12 }}
-                transition={{ duration: 0.14, ease: 'easeOut' }}
+          {/* ── Options button — ALWAYS mounted, visibility via opacity ──── */}
+          {/* This is the critical fix: never unmount DropdownMenu */}
+          <div
+            style={{
+              opacity: showMenuButton ? 1 : 0,
+              pointerEvents: showMenuButton ? 'auto' : 'none',
+              transition: 'opacity 0.15s ease',
+            }}
+          >
+            <DropdownMenu
+              open={menuOpen}
+              onOpenChange={(open) => {
+                setMenuOpen(open)
+                // When menu closes, also clear hover so button fades if cursor left
+                if (!open && !headerHovered) setHeaderHovered(false)
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={cn(
+                    'p-1.5 rounded-lg transition-all',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                  )}
+                  style={{
+                    color: menuOpen ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.45)',
+                    background: menuOpen ? 'rgba(255,255,255,0.10)' : 'transparent',
+                    border: menuOpen ? '1px solid rgba(255,255,255,0.12)' : '1px solid transparent',
+                  }}
+                  aria-label={`Options for ${column.title}`}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent
+                align="end"
+                sideOffset={6}
+                className="w-48"
+                style={{
+                  background: 'linear-gradient(160deg, oklch(0.19 0.018 265) 0%, oklch(0.16 0.014 265) 100%)',
+                  border: '1px solid rgba(255,255,255,0.09)',
+                  boxShadow: '0 16px 48px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.03)',
+                  borderRadius: '0.875rem',
+                  padding: '6px',
+                }}
               >
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className={cn(
-                        'p-1.5 rounded-lg transition-all',
-                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                      )}
-                      style={{
-                        color: 'rgba(255,255,255,0.45)',
-                        background: 'transparent',
-                        border: '1px solid transparent',
-                      }}
-                      onMouseEnter={(e) => {
-                        ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'
-                        ;(e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.10)'
-                        ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)'
-                      }}
-                      onMouseLeave={(e) => {
-                        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                        ;(e.currentTarget as HTMLElement).style.borderColor = 'transparent'
-                        ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.45)'
-                      }}
-                      aria-label={`Options for ${column.title}`}
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    <DropdownMenuItem onClick={onAddCard} className="gap-2 cursor-pointer">
-                      <Plus className="size-4 text-outline" />
-                      Add card
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => setDeleteOpen(true)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <Trash2 className="size-4" />
-                      Delete column
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <DropdownMenuLabel
+                  className="text-[10px] font-bold uppercase tracking-widest px-2 pb-1"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}
+                >
+                  {column.title}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator
+                  style={{ background: 'rgba(255,255,255,0.06)', margin: '4px 0' }}
+                />
+
+                <DropdownMenuItem
+                  onClick={onAddCard}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                  style={{ color: 'rgba(255,255,255,0.72)' }}
+                >
+                  <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(0,218,243,0.12)', color: '#00DAF3' }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </div>
+                  Add card
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={openRename}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                  style={{ color: 'rgba(255,255,255,0.72)' }}
+                >
+                  <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)' }}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </div>
+                  Rename column
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator
+                  style={{ background: 'rgba(255,255,255,0.06)', margin: '4px 0' }}
+                />
+
+                <DropdownMenuItem
+                  onClick={() => setDeleteOpen(true)}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                  style={{ color: 'rgba(239,68,68,0.85)' }}
+                >
+                  <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(239,68,68,0.12)', color: '#EF4444' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </div>
+                  Delete column
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Subtle divider */}
@@ -243,21 +326,15 @@ export function Column({
           style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }}
         />
 
-        {/* ── Card list ─────────────────────────────────────────────────────── */}
+        {/* ── Card list ─────────────────────────────────────────────────── */}
         <div
-          className="flex-1 overflow-y-auto flex flex-col gap-2 px-3 pb-2 min-h-0"
-          style={{
-            scrollbarWidth: 'none',
-            // Firefox
-          }}
+          className="flex-1 overflow-y-auto flex flex-col gap-2 px-3 pb-2 min-h-0 column-scroll"
+          style={{ scrollbarWidth: 'none' }}
         >
-          <style>{`
-            .column-scroll::-webkit-scrollbar { display: none; }
-          `}</style>
+          <style>{`.column-scroll::-webkit-scrollbar { display: none; }`}</style>
 
           <AnimatePresence mode="popLayout">
             {!hasCards ? (
-              // Empty state
               <motion.div
                 key="empty"
                 initial={{ opacity: 0 }}
@@ -294,7 +371,7 @@ export function Column({
           </AnimatePresence>
         </div>
 
-        {/* ── Drop zone highlight ring (only while dragging over) ────────────── */}
+        {/* Drop zone highlight ring */}
         <AnimatePresence>
           {isOver && (
             <motion.div
@@ -312,7 +389,7 @@ export function Column({
           )}
         </AnimatePresence>
 
-        {/* ── Add Card button ───────────────────────────────────────────────── */}
+        {/* ── Add Card button ───────────────────────────────────────────── */}
         <div className="px-3 pt-1.5 pb-3">
           <motion.button
             onClick={onAddCard}
@@ -341,54 +418,179 @@ export function Column({
               ;(e.currentTarget as HTMLElement).style.background = 'transparent'
             }}
           >
-            <motion.span
-              className="inline-flex"
-              whileHover={{ rotate: 90 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </motion.span>
+            <Plus className="w-3.5 h-3.5" />
             Add card
           </motion.button>
         </div>
       </div>
 
-      {/* ── Delete confirmation dialog ─────────────────────────────────────── */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete "{column.title}"?</DialogTitle>
-            <DialogDescription>
-              This will permanently delete the column and all {cardCount} card{cardCount !== 1 ? 's' : ''} inside it.
-              This cannot be undone.
+      {/* ── Rename dialog ──────────────────────────────────────────────────── */}
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent
+          className="sm:max-w-sm p-0 overflow-hidden gap-0"
+          style={DIALOG_CONTENT_STYLE}
+        >
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle
+              className="text-base font-bold"
+              style={{ color: 'oklch(0.93 0.012 265)', fontFamily: 'var(--df-font-display)' }}
+            >
+              Rename column
+            </DialogTitle>
+            <DialogDescription
+              className="text-[13px] mt-1"
+              style={{ color: 'rgba(255,255,255,0.38)' }}
+            >
+              Give this column a new name.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-2">
+
+          <div className="px-6 pb-2">
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename()
+                if (e.key === 'Escape') setRenameOpen(false)
+              }}
+              placeholder="Column name"
+              maxLength={100}
+              className="w-full rounded-xl px-3.5 py-2.5 text-sm font-medium outline-none transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                color: 'oklch(0.91 0.015 265)',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = 'oklch(0.82 0.14 198 / 0.45)'
+                e.currentTarget.style.boxShadow = '0 0 0 3px oklch(0.82 0.14 198 / 0.10)'
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            />
+          </div>
+
+          <DialogFooter className="px-6 pt-3 pb-5 flex gap-2 sm:gap-2">
+            <button
+              onClick={() => setRenameOpen(false)}
+              disabled={isRenaming}
+              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-50"
+              style={{
+                border: '1px solid rgba(255,255,255,0.09)',
+                color: 'rgba(255,255,255,0.50)',
+                background: 'transparent',
+              }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.80)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.50)'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleRename}
+              disabled={isRenaming || !renameValue.trim() || renameValue.trim() === column.title}
+              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-40"
+              style={{
+                background: 'linear-gradient(135deg, oklch(0.82 0.14 198 / 0.22) 0%, oklch(0.55 0.12 198 / 0.30) 100%)',
+                border: '1px solid oklch(0.82 0.14 198 / 0.30)',
+                color: 'oklch(0.82 0.14 198)',
+              }}
+            >
+              {isRenaming ? (
+                <span className="inline-flex items-center gap-1.5 justify-center">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Saving…
+                </span>
+              ) : (
+                'Rename'
+              )}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete confirmation dialog ─────────────────────────────────────── */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent
+          className="sm:max-w-sm p-0 overflow-hidden gap-0"
+          style={DIALOG_CONTENT_STYLE}
+        >
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+              style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.20)' }}
+            >
+              <Trash2 className="w-5 h-5" style={{ color: '#EF4444' }} />
+            </div>
+            <DialogTitle
+              className="text-base font-bold"
+              style={{ color: 'oklch(0.93 0.012 265)', fontFamily: 'var(--df-font-display)' }}
+            >
+              Delete "{column.title}"?
+            </DialogTitle>
+            <DialogDescription
+              className="text-[13px] mt-1 leading-relaxed"
+              style={{ color: 'rgba(255,255,255,0.38)' }}
+            >
+              This will permanently delete the column and all{' '}
+              <span style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>
+                {cardCount} card{cardCount !== 1 ? 's' : ''}
+              </span>{' '}
+              inside it. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="px-6 pt-2 pb-5 flex gap-2 sm:gap-2">
             <button
               onClick={() => setDeleteOpen(false)}
               disabled={isDeleting}
-              className={cn(
-                'flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold',
-                'border border-outline-variant/20 text-on-surface-variant',
-                'hover:bg-surface-container hover:text-on-surface',
-                'transition-colors disabled:opacity-50',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-              )}
+              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-50"
+              style={{
+                border: '1px solid rgba(255,255,255,0.09)',
+                color: 'rgba(255,255,255,0.50)',
+                background: 'transparent',
+              }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.80)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.50)'
+              }}
             >
               Cancel
             </button>
             <button
               onClick={handleDelete}
               disabled={isDeleting}
-              className={cn(
-                'flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold',
-                'bg-destructive text-white hover:bg-destructive/90',
-                'transition-all disabled:opacity-70',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
-              )}
+              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-70"
+              style={{
+                background: 'oklch(0.55 0.22 25)',
+                border: '1px solid rgba(239,68,68,0.30)',
+                color: 'white',
+              }}
+              onMouseEnter={(e) => {
+                if (!isDeleting) (e.currentTarget as HTMLElement).style.background = 'oklch(0.60 0.22 25)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'oklch(0.55 0.22 25)'
+              }}
             >
               {isDeleting ? (
-                <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                <span className="inline-flex items-center gap-1.5 justify-center">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Deleting…
+                </span>
               ) : (
                 'Delete column'
               )}

@@ -1,22 +1,20 @@
 // src/components/board/Card.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// REDESIGNED: Premium kanban card — "Obsidian Studio" aesthetic.
+// FIX: Card options menu no longer flickers / immediately closes.
 //
-// Interaction design:
-//   • Magnetic hover lift (y: -3, subtle shadow bloom)
-//   • Shimmer sweep animates across on hover (AnimatePresence)
-//   • Color accent: thin left bar with soft glow halo
-//   • Title text animates to primary cyan on hover
-//   • Options button (⋯) appears on hover with spring pop — positioned top-right
-//   • Delete confirmation slides up INSIDE the card (no dialog)
-//   • Drag ghost: tilted 2°, scaled up slightly, deep shadow
-//   • Footer: assignee + doc indicator + date — staggered mount
-//   • isDragging: the card slot becomes a ghost placeholder (opacity 0 + dashed border)
+// Root cause: wrapping <DropdownMenu> in <AnimatePresence> was unmounting the
+// trigger button the moment hover ended — even if the menu was mid-open —
+// causing Radix to close it immediately.
 //
-// All functionality preserved: useSortable, navigate, archiveCard, deleteCard.
+// Fix (mirrors Column.tsx): the DropdownMenu + trigger are ALWAYS mounted.
+// Visibility is controlled purely through CSS opacity + pointer-events so the
+// DOM element is stable throughout the menu's open lifecycle.
+//
+// All functionality preserved: useSortable, navigate to document editor,
+// archiveCard, deleteCard, editCard modal.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -30,7 +28,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { useAppDispatch } from '@/store/hooks'
 import { openModal } from '@/store'
 import { useArchiveCard } from '@/hooks/useArchiveCard'
@@ -62,15 +69,26 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+// ── Shared dialog styles ──────────────────────────────────────────────────────
+const DIALOG_CONTENT_STYLE = {
+  background: 'linear-gradient(160deg, oklch(0.175 0.018 265) 0%, oklch(0.155 0.014 265) 100%)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  boxShadow: '0 32px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
+  borderRadius: '1.25rem',
+}
+
 // ── Card ──────────────────────────────────────────────────────────────────────
 
 export function Card({ card, boardId, isOverlay = false }: CardProps) {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [deleteOpen, setDeleteOpen] = useState(false)
+
+  // ── Hover + menu state ────────────────────────────────────────────────────
   const [isHovered, setIsHovered] = useState(false)
-  const menuOpenRef = useRef(false)
+  // Track menu open state independently — keeps button visible while menu is open
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const { mutate: archiveCard, isPending: isArchiving } = useArchiveCard(boardId)
   const { mutate: deleteCard, isPending: isDeleting } = useDeleteCard(boardId)
@@ -96,6 +114,9 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
   const hoverShadow = colorConfig
     ? `0 8px 32px ${colorConfig.glow}, 0 2px 8px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.055)`
     : `${DEFAULT_HOVER_SHADOW}, 0 2px 8px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.055)`
+
+  // Button is visible when hovering OR menu is open (same pattern as Column.tsx)
+  const showMenuButton = (isHovered || menuOpen) && !deleteOpen
 
   // ── Placeholder slot while dragging ───────────────────────────────────────
   if (isDragging && !isOverlay) {
@@ -125,7 +146,7 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
       className="relative"
     >
       <motion.div
-        onHoverStart={() => { if (!menuOpenRef.current) setIsHovered(true) }}
+        onHoverStart={() => setIsHovered(true)}
         onHoverEnd={() => setIsHovered(false)}
         whileHover={!isOverlay ? {
           y: -3,
@@ -143,8 +164,8 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
         className="relative rounded-2xl overflow-hidden cursor-grab active:cursor-grabbing select-none"
         style={{
           background: 'linear-gradient(155deg, oklch(0.205 0.015 265) 0%, oklch(0.175 0.013 265) 100%)',
-          border: `1px solid ${isHovered ? hoverBorder : 'rgba(255,255,255,0.068)'}`,
-          boxShadow: isHovered
+          border: `1px solid ${(isHovered || menuOpen) ? hoverBorder : 'rgba(255,255,255,0.068)'}`,
+          boxShadow: (isHovered || menuOpen)
             ? hoverShadow
             : isOverlay
               ? '0 28px 56px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,218,243,0.20)'
@@ -201,7 +222,7 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
               'cursor-pointer focus:outline-none',
             )}
             style={{
-              color: isHovered ? 'oklch(0.82 0.14 198)' : 'oklch(0.91 0.015 265)',
+              color: (isHovered || menuOpen) ? 'oklch(0.82 0.14 198)' : 'oklch(0.91 0.015 265)',
               fontFamily: 'var(--df-font-body)',
             }}
           >
@@ -245,14 +266,14 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
               {/* Doc indicator */}
               <motion.div
                 animate={{
-                  background: isHovered ? 'rgba(0,218,243,0.10)' : 'rgba(255,255,255,0.04)',
+                  background: (isHovered || menuOpen) ? 'rgba(0,218,243,0.10)' : 'rgba(255,255,255,0.04)',
                 }}
                 transition={{ duration: 0.18 }}
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded-md"
               >
                 <FileText
                   className="w-2.75 h-2.75 transition-colors duration-200"
-                  style={{ color: isHovered ? 'oklch(0.82 0.14 198)' : 'rgba(255,255,255,0.32)' }}
+                  style={{ color: (isHovered || menuOpen) ? 'oklch(0.82 0.14 198)' : 'rgba(255,255,255,0.32)' }}
                 />
               </motion.div>
             </div>
@@ -266,155 +287,200 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
           </div>
         </div>
 
-        {/* Options button — appears on hover */}
+        {/* ── Options button — ALWAYS mounted, visibility via opacity ──────── */}
+        {/* Critical fix: never unmount DropdownMenu. Same pattern as Column.tsx */}
         {!isOverlay && (
-          <AnimatePresence>
-            {isHovered && !deleteOpen && (
-              <motion.div
-                key="opts"
-                initial={{ opacity: 0, scale: 0.6, rotate: -10 }}
-                animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                exit={{ opacity: 0, scale: 0.6, rotate: -10 }}
-                transition={{ duration: 0.13, ease: 'easeOut' }}
-                className="absolute top-2.5 right-2.5 z-20"
-              >
-                <DropdownMenu
-                  onOpenChange={(open) => {
-                    menuOpenRef.current = open
-                    if (!open) setIsHovered(false)
-                  }}
-                >
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      onPointerDown={(e) => e.stopPropagation()}
-                      aria-label="Card options"
-                      className={cn(
-                        'p-1.5 rounded-lg transition-all',
-                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                      )}
-                      style={{
-                        background: 'oklch(0.22 0.015 265 / 0.9)',
-                        backdropFilter: 'blur(8px)',
-                        border: '1px solid rgba(255,255,255,0.10)',
-                        color: 'rgba(255,255,255,0.65)',
-                      }}
-                    >
-                      <MoreHorizontal className="w-3.5 h-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-40">
-                    <DropdownMenuItem
-                      onClick={() => dispatch(openModal({ type: 'editCard', cardId: card.id }))}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <Pencil className="size-4 text-outline" />
-                      Edit card
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => archiveCard(card.id)}
-                      disabled={isArchiving}
-                      className="gap-2 cursor-pointer"
-                    >
-                      {isArchiving
-                        ? <Loader2 className="size-4 animate-spin" />
-                        : <Archive className="size-4 text-outline" />
-                      }
-                      Archive
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => setDeleteOpen(true)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <Trash2 className="size-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
-
-        {/* Delete confirmation — slides up inside card */}
-        <AnimatePresence>
-          {deleteOpen && (
-            <motion.div
-              key="delete"
-              initial={{ opacity: 0, y: 14, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 14, scale: 0.96 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute inset-0 z-30 rounded-2xl p-4 flex flex-col justify-between"
-              style={{
-                background: 'oklch(0.13 0.018 265 / 0.97)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(239,68,68,0.20)',
+          <div
+            className="absolute top-2.5 right-2.5 z-20"
+            style={{
+              opacity: showMenuButton ? 1 : 0,
+              pointerEvents: showMenuButton ? 'auto' : 'none',
+              transition: 'opacity 0.15s ease',
+            }}
+          >
+            <DropdownMenu
+              open={menuOpen}
+              onOpenChange={(open) => {
+                setMenuOpen(open)
               }}
-              onPointerDown={(e) => e.stopPropagation()}
             >
-              <div>
-                <p
-                  className="text-sm font-semibold"
-                  style={{ color: 'oklch(0.91 0.015 265)', fontFamily: 'var(--df-font-display)' }}
-                >
-                  Delete this card?
-                </p>
-                <p className="text-[11px] mt-1 leading-relaxed" style={{ color: 'rgba(255,255,255,0.40)' }}>
-                  Permanently removes the card and its document.
-                </p>
-              </div>
-              <div className="flex gap-2 mt-3">
+              <DropdownMenuTrigger asChild>
                 <button
-                  onClick={() => setDeleteOpen(false)}
-                  disabled={isDeleting}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  aria-label="Card options"
                   className={cn(
-                    'flex-1 py-2 rounded-xl text-xs font-bold transition-colors',
+                    'p-1.5 rounded-lg transition-all',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                    'disabled:opacity-50',
                   )}
                   style={{
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    color: 'rgba(255,255,255,0.55)',
-                    background: 'transparent',
-                  }}
-                  onMouseEnter={(e) => {
-                    ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
-                    ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)'
-                  }}
-                  onMouseLeave={(e) => {
-                    ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                    ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.55)'
+                    background: menuOpen ? 'rgba(255,255,255,0.12)' : 'oklch(0.22 0.015 265 / 0.9)',
+                    backdropFilter: 'blur(8px)',
+                    border: menuOpen ? '1px solid rgba(255,255,255,0.14)' : '1px solid rgba(255,255,255,0.10)',
+                    color: menuOpen ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.65)',
                   }}
                 >
-                  Cancel
+                  <MoreHorizontal className="w-3.5 h-3.5" />
                 </button>
-                <button
-                  onClick={() => { deleteCard(card.id); setDeleteOpen(false) }}
-                  disabled={isDeleting}
-                  className={cn(
-                    'flex-1 py-2 rounded-xl text-xs font-bold transition-all',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
-                    'disabled:opacity-70',
-                  )}
-                  style={{
-                    background: 'oklch(0.65 0.22 25)',
-                    color: 'white',
-                  }}
-                  onMouseEnter={(e) => { ;(e.currentTarget as HTMLElement).style.background = 'oklch(0.70 0.22 25)' }}
-                  onMouseLeave={(e) => { ;(e.currentTarget as HTMLElement).style.background = 'oklch(0.65 0.22 25)' }}
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent
+                align="end"
+                sideOffset={6}
+                className="w-48"
+                style={{
+                  background: 'linear-gradient(160deg, oklch(0.19 0.018 265) 0%, oklch(0.16 0.014 265) 100%)',
+                  border: '1px solid rgba(255,255,255,0.09)',
+                  boxShadow: '0 16px 48px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.03)',
+                  borderRadius: '0.875rem',
+                  padding: '6px',
+                }}
+              >
+                <DropdownMenuLabel
+                  className="text-[10px] font-bold uppercase tracking-widest px-2 pb-1 truncate max-w-[160px]"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}
                 >
-                  {isDeleting
-                    ? <Loader2 className="size-3.5 animate-spin mx-auto" />
-                    : 'Delete'
-                  }
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                  {card.title}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator
+                  style={{ background: 'rgba(255,255,255,0.06)', margin: '4px 0' }}
+                />
+
+                <DropdownMenuItem
+                  onClick={() => dispatch(openModal({ type: 'editCard', cardId: card.id }))}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                  style={{ color: 'rgba(255,255,255,0.72)' }}
+                >
+                  <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)' }}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </div>
+                  Edit card
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={() => archiveCard(card.id)}
+                  disabled={isArchiving}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                  style={{ color: 'rgba(255,255,255,0.72)' }}
+                >
+                  <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)' }}
+                  >
+                    {isArchiving
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Archive className="w-3.5 h-3.5" />
+                    }
+                  </div>
+                  {isArchiving ? 'Archiving…' : 'Archive'}
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator
+                  style={{ background: 'rgba(255,255,255,0.06)', margin: '4px 0' }}
+                />
+
+                <DropdownMenuItem
+                  onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                  style={{ color: 'rgba(239,68,68,0.85)' }}
+                >
+                  <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(239,68,68,0.12)', color: '#EF4444' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </div>
+                  Delete card
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </motion.div>
+
+      {/* ── Delete confirmation dialog ──────────────────────────────────────── */}
+      {/* Rendered outside the motion card so it's never clipped by overflow:hidden */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent
+          className="sm:max-w-sm p-0 overflow-hidden gap-0"
+          style={DIALOG_CONTENT_STYLE}
+        >
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+              style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.20)' }}
+            >
+              <Trash2 className="w-5 h-5" style={{ color: '#EF4444' }} />
+            </div>
+            <DialogTitle
+              className="text-base font-bold"
+              style={{ color: 'oklch(0.93 0.012 265)', fontFamily: 'var(--df-font-display)' }}
+            >
+              Delete this card?
+            </DialogTitle>
+            <DialogDescription
+              className="text-[13px] mt-1 leading-relaxed"
+              style={{ color: 'rgba(255,255,255,0.38)' }}
+            >
+              Permanently removes{' '}
+              <span style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>
+                "{card.title}"
+              </span>{' '}
+              and its document. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="px-6 pt-2 pb-5 flex gap-2 sm:gap-2">
+            <button
+              onClick={() => setDeleteOpen(false)}
+              disabled={isDeleting}
+              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-50"
+              style={{
+                border: '1px solid rgba(255,255,255,0.09)',
+                color: 'rgba(255,255,255,0.50)',
+                background: 'transparent',
+              }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.80)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.50)'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { deleteCard(card.id); setDeleteOpen(false) }}
+              disabled={isDeleting}
+              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-70"
+              style={{
+                background: 'oklch(0.55 0.22 25)',
+                border: '1px solid rgba(239,68,68,0.30)',
+                color: 'white',
+              }}
+              onMouseEnter={(e) => {
+                if (!isDeleting) (e.currentTarget as HTMLElement).style.background = 'oklch(0.60 0.22 25)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.background = 'oklch(0.55 0.22 25)'
+              }}
+            >
+              {isDeleting ? (
+                <span className="inline-flex items-center gap-1.5 justify-center">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Deleting…
+                </span>
+              ) : (
+                'Delete card'
+              )}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

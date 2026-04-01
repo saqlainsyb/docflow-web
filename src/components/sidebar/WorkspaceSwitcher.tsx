@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { Network, ChevronsUpDown, Check, Plus, Loader2 } from 'lucide-react'
+import { ChevronsUpDown, Check, Plus, Loader2, Building2 } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useAppDispatch } from '@/store/hooks'
 import { openModal } from '@/store'
@@ -9,15 +9,26 @@ import { cn } from '@/lib/utils'
 /**
  * WorkspaceSwitcher
  *
- * Displays the active workspace name and provides a popover for:
- *   - Switching to a different workspace (navigates to /:workspaceId/boards)
- *   - Creating a new workspace (opens the createWorkspace modal)
- *
- * Active workspace is derived from the URL param (:workspaceId) — the URL
- * is the single source of truth. No separate Redux state needed.
- *
- * Data: workspace list comes from TanStack Query via useWorkspaces.
+ * Redesigned — "Obsidian Studio" aesthetic.
+ * Same data/logic, elevated presentation:
+ *  - Monogram avatar derived from workspace name
+ *  - Subtle glow on active item
+ *  - Tighter, more intentional spacing
  */
+
+/** Single-letter monogram from workspace name */
+function getMonogram(name: string): string {
+  return name.trim().charAt(0).toUpperCase()
+}
+
+/** Deterministic hue from a workspace ID for the monogram badge */
+function getWorkspaceHue(id: string): string {
+  const hues = [198, 280, 285, 155, 35, 320]
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
+  return `${hues[Math.abs(hash) % hues.length]}`
+}
+
 export function WorkspaceSwitcher() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
@@ -37,113 +48,146 @@ export function WorkspaceSwitcher() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        {/* Trigger button — full width, shows active workspace */}
         <button
           aria-label="Switch workspace"
           className={cn(
-            'w-full flex items-center justify-between gap-3 p-3 rounded-xl',
-            'bg-surface-container hover:bg-surface-container-high',
-            'transition-colors duration-150 group outline-none',
-            'focus-visible:ring-2 focus-visible:ring-primary/50',
+            'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl',
+            'bg-surface-container-high/60 hover:bg-surface-container-high',
+            'border border-outline-variant/20 hover:border-outline-variant/35',
+            'transition-all duration-200 group outline-none',
+            'focus-visible:ring-2 focus-visible:ring-primary/40',
           )}
         >
-          {/* Left — icon + label */}
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-              <Network className="w-4 h-4 text-df-primary-fixed-dim" />
-            </div>
-            <div className="text-left min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-outline leading-none mb-1">
-                Workspace
-              </p>
-              {isLoading ? (
-                <Loader2 className="w-3 h-3 animate-spin text-on-surface-variant" />
-              ) : (
-                <p className="text-sm font-semibold text-on-surface truncate leading-none">
-                  {activeWorkspace?.name ?? 'Select workspace'}
-                </p>
-              )}
-            </div>
+          {/* Workspace monogram badge */}
+          <div
+            className={cn(
+              'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+              'text-[11px] font-bold select-none',
+              'transition-all duration-200',
+            )}
+            style={{
+              background: activeWorkspace
+                ? `oklch(0.42 0.12 ${getWorkspaceHue(activeWorkspace.id)})`
+                : 'oklch(0.27 0.015 265)',
+              color: 'oklch(0.92 0.015 265)',
+            }}
+          >
+            {isLoading ? (
+              <Loader2 className="w-3 h-3 animate-spin opacity-60" />
+            ) : (
+              <span>{activeWorkspace ? getMonogram(activeWorkspace.name) : '?'}</span>
+            )}
           </div>
 
-          {/* Right — chevron */}
-          <ChevronsUpDown className="w-4 h-4 text-outline shrink-0 group-hover:text-on-surface transition-colors" />
+          {/* Label group */}
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-outline leading-none mb-[3px]">
+              Workspace
+            </p>
+            {isLoading ? (
+              <div className="h-3 w-20 rounded bg-surface-container-highest/60 animate-pulse" />
+            ) : (
+              <p className="text-[13px] font-semibold text-on-surface truncate leading-none">
+                {activeWorkspace?.name ?? 'Select workspace'}
+              </p>
+            )}
+          </div>
+
+          {/* Chevron */}
+          <ChevronsUpDown
+            className="w-3.5 h-3.5 text-outline/60 shrink-0 group-hover:text-outline transition-colors"
+            aria-hidden="true"
+          />
         </button>
       </PopoverTrigger>
 
       <PopoverContent
         align="start"
         side="bottom"
-        sideOffset={8}
-        className="w-64 p-2"
+        sideOffset={6}
+        className="w-[232px] p-1.5"
       >
-        {/* Section label */}
-        <p className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.15em] text-outline">
-          Your Workspaces
-        </p>
+        {/* Section header */}
+        <div className="px-2 pt-1 pb-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-outline">
+            Your Workspaces
+          </p>
+        </div>
 
         {/* Workspace list */}
-        <div className="space-y-0.5 mb-1">
+        <div className="space-y-px">
           {isLoading ? (
-            <div className="flex items-center justify-center py-4">
+            <div className="flex items-center justify-center py-5">
               <Loader2 className="w-4 h-4 animate-spin text-outline" />
             </div>
           ) : workspaces && workspaces.length > 0 ? (
             workspaces.map((ws) => {
               const isActive = ws.id === workspaceId
+              const hue = getWorkspaceHue(ws.id)
               return (
                 <button
                   key={ws.id}
                   onClick={() => handleSelect(ws.id)}
                   className={cn(
-                    'w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left',
-                    'transition-colors duration-150 outline-none',
+                    'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left',
+                    'transition-all duration-150 outline-none',
                     'focus-visible:ring-2 focus-visible:ring-primary/50',
                     isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface',
+                      ? 'bg-primary/[0.08] border border-primary/[0.12]'
+                      : 'hover:bg-surface-container border border-transparent',
                   )}
                 >
-                  {/* Active indicator dot */}
+                  {/* Monogram */}
                   <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-[10px] font-bold"
+                    style={{
+                      background: `oklch(0.38 0.10 ${hue})`,
+                      color: 'oklch(0.92 0.015 265)',
+                    }}
+                  >
+                    {getMonogram(ws.name)}
+                  </div>
+
+                  <span
                     className={cn(
-                      'w-2 h-2 rounded-full shrink-0 transition-colors',
-                      isActive
-                        ? 'bg-primary shadow-[0_0_8px_var(--df-primary)]'
-                        : 'bg-outline-variant',
+                      'text-[13px] font-medium truncate flex-1 leading-none',
+                      isActive ? 'text-primary' : 'text-on-surface-variant',
                     )}
-                  />
-                  <span className="text-sm font-medium truncate flex-1">
+                  >
                     {ws.name}
                   </span>
+
                   {isActive && (
-                    <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <Check
+                      className="w-3.5 h-3.5 text-primary shrink-0"
+                      strokeWidth={2.5}
+                    />
                   )}
                 </button>
               )
             })
           ) : (
-            <p className="px-2 py-2 text-sm text-outline">
-              No workspaces yet.
-            </p>
+            <p className="px-2 py-3 text-sm text-outline">No workspaces yet.</p>
           )}
         </div>
 
         {/* Divider */}
-        <div className="h-px bg-outline-variant/15 my-1" />
+        <div className="h-px bg-outline-variant/20 my-1.5 mx-1" />
 
         {/* Create workspace */}
         <button
           onClick={handleCreate}
           className={cn(
-            'w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left',
-            'text-primary hover:bg-primary/10',
-            'transition-colors duration-150 outline-none',
+            'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left',
+            'text-on-surface-variant hover:text-primary hover:bg-primary/[0.06]',
+            'transition-all duration-150 outline-none group',
             'focus-visible:ring-2 focus-visible:ring-primary/50',
           )}
         >
-          <Plus className="w-4 h-4 shrink-0" />
-          <span className="text-sm font-bold">Create Workspace</span>
+          <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 bg-surface-container-high border border-outline-variant/20">
+            <Plus className="w-3.5 h-3.5" strokeWidth={2} />
+          </div>
+          <span className="text-[13px] font-semibold">New Workspace</span>
         </button>
       </PopoverContent>
     </Popover>

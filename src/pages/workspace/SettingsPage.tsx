@@ -1,25 +1,22 @@
 // src/pages/workspace/SettingsPage.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Workspace settings page — rename and delete.
+// Workspace settings page — Redesigned (Obsidian Studio)
 //
 // Sections:
-//   1. Rename form  — admin + owner. Pre-populated with current name.
-//                     Uses RHF + Zod (renameWorkspaceSchema).
-//   2. Danger zone  — owner only. Delete workspace with typed confirmation.
+//   1. General    — Rename workspace (admin + owner)
+//   2. Danger     — Delete workspace (owner only), typed confirmation dialog
 //
-// Rename pre-population:
-//   RHF defaultValues only run on mount. Since workspace data loads async,
-//   we use reset() in a useEffect that watches the workspace query result.
-//   This is the standard RHF pattern for edit forms with async initial data.
-//
-// Delete confirmation:
-//   Two-step. First click opens a Dialog. User must type the exact workspace
-//   name to unlock the confirm button. Prevents accidental deletion.
-//
-// Sub-components (page-scoped):
-//   SettingsTopbar    — workspace name + breadcrumb
-//   RenameSection     — name input + save button
-//   DangerZone        — delete trigger + confirmation dialog
+// Design changes vs. original:
+//   - Section-card layout: each section lives in its own rounded surface card
+//     with a clear header, description, and a hairline divider before the action
+//   - Topbar chip matches Members/Boards pattern (filled pill, not plain text)
+//   - Rename input row is self-contained within its card — no loose form floats
+//   - Saved state shows an inline success chip next to the button, not just
+//     a button color change
+//   - Danger zone: border-dashed replaced with a solid left-edge accent bar
+//     on a slightly tinted surface — less shouty, still unmistakably serious
+//   - Delete dialog: confirmation input has a destructive focus ring
+//   - All logic, hooks, and validation are identical to the original
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react'
@@ -27,7 +24,15 @@ import { useParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { isAxiosError } from 'axios'
-import { Loader2, AlertTriangle, AlertCircle, Check } from 'lucide-react'
+import {
+  Loader2,
+  AlertTriangle,
+  AlertCircle,
+  Check,
+  Settings,
+  PenLine,
+  Trash2,
+} from 'lucide-react'
 import { useAppSelector } from '@/store/hooks'
 import { useWorkspace } from '@/hooks/useWorkspace'
 import { useRenameWorkspace } from '@/hooks/useRenameWorkspace'
@@ -51,7 +56,7 @@ import { cn } from '@/lib/utils'
 
 const RENAME_ERROR_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   VALIDATION_ERROR: 'Name is invalid. Check length and characters.',
-  INSUFFICIENT_PERMISSIONS: 'You don\'t have permission to rename this workspace.',
+  INSUFFICIENT_PERMISSIONS: "You don't have permission to rename this workspace.",
   INTERNAL_ERROR: 'Something went wrong. Please try again.',
 }
 
@@ -77,13 +82,87 @@ function getServerError(
 
 function SettingsTopbar({ workspaceName }: { workspaceName: string }) {
   return (
-    <header className="h-16 flex items-center gap-4 px-8 bg-background/80 backdrop-blur-md border-b border-outline-variant/10 sticky top-0 z-30">
-      <h2 className="font-display font-bold text-lg text-on-surface truncate">
+    <header className="h-14 flex items-center gap-3 px-8 bg-background/70 backdrop-blur-md border-b border-outline-variant/10 sticky top-0 z-30">
+      <span className="text-sm font-semibold text-on-surface-variant truncate">
         {workspaceName}
-      </h2>
-      <div className="h-4 w-px bg-outline-variant/30 shrink-0" />
-      <span className="text-xs text-outline font-medium">Settings</span>
+      </span>
+      <span className="text-outline/40 text-sm">/</span>
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md',
+          'text-xs font-semibold text-primary',
+          'bg-primary/[0.08] border border-primary/[0.12]',
+        )}
+      >
+        <Settings className="w-3 h-3" strokeWidth={2} />
+        Settings
+      </span>
     </header>
+  )
+}
+
+// ── SectionCard ───────────────────────────────────────────────────────────────
+// Shared wrapper: icon + title + description on top, hairline, action below
+
+interface SectionCardProps {
+  icon: React.ReactNode
+  title: string
+  description: string
+  children: React.ReactNode
+  danger?: boolean
+}
+
+function SectionCard({ icon, title, description, children, danger = false }: SectionCardProps) {
+  return (
+    <div
+      className={cn(
+        'rounded-2xl border overflow-hidden',
+        danger
+          ? 'border-destructive/20 bg-destructive/[0.03]'
+          : 'border-outline-variant/15 bg-surface-container-low',
+      )}
+    >
+      {/* Header */}
+      <div
+        className={cn(
+          'flex items-start gap-4 px-6 py-5',
+          danger && 'border-l-2 border-destructive/50',
+        )}
+      >
+        <div
+          className={cn(
+            'w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5',
+            danger
+              ? 'bg-destructive/10 text-destructive border border-destructive/20'
+              : 'bg-surface-container-highest text-on-surface-variant border border-outline-variant/20',
+          )}
+        >
+          {icon}
+        </div>
+        <div>
+          <h2
+            className={cn(
+              'font-display font-bold text-base leading-none mb-1.5',
+              danger ? 'text-destructive' : 'text-on-surface',
+            )}
+          >
+            {title}
+          </h2>
+          <p className="text-sm text-on-surface-variant leading-relaxed">{description}</p>
+        </div>
+      </div>
+
+      {/* Hairline */}
+      <div
+        className={cn(
+          'h-px mx-6',
+          danger ? 'bg-destructive/10' : 'bg-outline-variant/10',
+        )}
+      />
+
+      {/* Action area */}
+      <div className="px-6 py-5">{children}</div>
+    </div>
   )
 }
 
@@ -109,12 +188,10 @@ function RenameSection({ workspaceId, currentName, canRename }: RenameSectionPro
     defaultValues: { name: currentName },
   })
 
-  // Sync form value when workspace data arrives (async initial data pattern)
   useEffect(() => {
     resetForm({ name: currentName })
   }, [currentName, resetForm])
 
-  // Clear mutation success state when user starts editing again
   function handleChange() {
     if (isSuccess) reset()
   }
@@ -124,99 +201,87 @@ function RenameSection({ workspaceId, currentName, canRename }: RenameSectionPro
   }
 
   return (
-    <section aria-labelledby="rename-heading">
-      <h2
-        id="rename-heading"
-        className="font-display font-bold text-xl text-on-surface mb-1"
-      >
-        Workspace Name
-      </h2>
-      <p className="text-sm text-outline mb-6">
-        This name appears in the sidebar and all workspace communications.
-      </p>
-
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        noValidate
-        className="flex items-start gap-3 max-w-md"
-      >
-        <div className="flex-1 space-y-1.5">
-          <input
-            {...register('name')}
-            id="workspace-name"
-            type="text"
-            disabled={!canRename || isPending}
-            onChange={(e) => {
-              handleChange()
-              register('name').onChange(e)
-            }}
-            className={cn(
-              'w-full bg-surface-container-lowest rounded-lg px-4 py-2.5',
-              'text-sm text-on-surface',
-              'border border-outline-variant/20',
-              'focus:outline-none focus:border-primary/30',
-              'focus:shadow-[0_0_15px_rgba(0,218,243,0.1)]',
-              'transition-all duration-200',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              errors.name && 'border-destructive focus:border-destructive',
+    <SectionCard
+      icon={<PenLine className="w-4 h-4" strokeWidth={2} />}
+      title="Workspace name"
+      description="Appears in the sidebar and all workspace communications. Visible to every member."
+    >
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        <div className="flex items-start gap-3 max-w-md">
+          <div className="flex-1 space-y-1.5">
+            <input
+              {...register('name')}
+              id="workspace-name"
+              type="text"
+              disabled={!canRename || isPending}
+              onChange={(e) => {
+                handleChange()
+                register('name').onChange(e)
+              }}
+              className={cn(
+                'w-full bg-surface-container-lowest rounded-xl px-4 py-2.5',
+                'text-sm text-on-surface font-medium',
+                'border border-outline-variant/20',
+                'focus:outline-none focus:border-primary/40',
+                'focus:shadow-[0_0_0_3px_oklch(0.82_0.14_198/10%)]',
+                'transition-all duration-200',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+                errors.name && 'border-destructive/50 focus:border-destructive/60 focus:shadow-[0_0_0_3px_oklch(0.65_0.22_25/10%)]',
+              )}
+              aria-invalid={!!errors.name}
+            />
+            {errors.name && (
+              <p role="alert" className="flex items-center gap-1.5 text-[11px] font-medium text-destructive">
+                <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
+                {errors.name.message}
+              </p>
             )}
-            aria-invalid={!!errors.name}
-            aria-describedby={
-              errors.name
-                ? 'workspace-name-error'
-                : serverError
-                  ? 'workspace-name-server-error'
-                  : undefined
-            }
-          />
-          {errors.name && (
-            <p
-              id="workspace-name-error"
-              role="alert"
-              className="flex items-center gap-1 text-[11px] font-medium text-destructive"
+            {serverError && (
+              <p role="alert" className="flex items-center gap-1.5 text-[11px] font-medium text-destructive">
+                <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
+                {serverError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Saved chip — appears after success, disappears when dirty again */}
+            {isSuccess && !isDirty && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-primary bg-primary/10 border border-primary/20">
+                <Check className="size-3" />
+                Saved
+              </span>
+            )}
+
+            <button
+              type="submit"
+              disabled={!canRename || isPending || !isDirty}
+              className={cn(
+                'px-4 py-2.5 rounded-xl text-sm font-bold',
+                'bg-surface-container-highest text-on-surface',
+                'border border-outline-variant/20',
+                'hover:bg-surface-highest hover:border-outline-variant/35',
+                'transition-all duration-150',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                'disabled:opacity-40 disabled:pointer-events-none',
+              )}
             >
-              <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
-              {errors.name.message}
-            </p>
-          )}
-          {serverError && (
-            <p
-              id="workspace-name-server-error"
-              role="alert"
-              className="flex items-center gap-1 text-[11px] font-medium text-destructive"
-            >
-              <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
-              {serverError}
-            </p>
-          )}
+              {isPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                'Save'
+              )}
+            </button>
+          </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={!canRename || isPending || !isDirty}
-          className={cn(
-            'px-4 py-2.5 rounded-lg text-sm font-bold shrink-0',
-            'transition-all duration-150',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-            'disabled:opacity-50 disabled:pointer-events-none',
-            isSuccess && !isDirty
-              ? 'bg-primary/10 text-primary'
-              : 'bg-surface-container-highest text-on-surface hover:bg-surface-bright',
-          )}
-        >
-          {isPending ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : isSuccess && !isDirty ? (
-            <span className="flex items-center gap-1.5">
-              <Check className="size-4" aria-hidden="true" />
-              Saved
-            </span>
-          ) : (
-            'Save'
-          )}
-        </button>
+        {!canRename && (
+          <p className="mt-3 text-xs text-outline/70">
+            Only admins and owners can rename the workspace.
+          </p>
+        )}
       </form>
-    </section>
+    </SectionCard>
   )
 }
 
@@ -247,53 +312,35 @@ function DangerZone({ workspaceId, workspaceName, isOwner }: DangerZoneProps) {
   }
 
   return (
-    <section
-      aria-labelledby="danger-heading"
-      className={cn(
-        'p-8 rounded-2xl space-y-4',
-        'border-2 border-dashed border-destructive/20',
-        'bg-destructive/5',
-      )}
-    >
-      <div className="flex items-center gap-3">
-        <AlertTriangle
-          className="size-5 text-destructive shrink-0"
-          aria-hidden="true"
-        />
-        <h2
-          id="danger-heading"
-          className="font-display font-bold text-xl text-destructive"
-        >
-          Danger Zone
-        </h2>
-      </div>
-
-      <p className="text-sm text-outline max-w-xl">
-        Deleting this workspace will permanently remove all boards, columns,
-        cards, documents, and member access. This action{' '}
-        <span className="font-semibold text-on-surface">cannot be undone.</span>
-      </p>
-
-      {!isOwner && (
-        <p className="text-xs text-outline italic">
-          Only the workspace owner can delete this workspace.
-        </p>
-      )}
-
-      {isOwner && (
-        <button
-          onClick={() => setDialogOpen(true)}
-          className={cn(
-            'px-5 py-2.5 rounded-xl text-sm font-bold',
-            'bg-destructive/10 text-destructive',
-            'hover:bg-destructive hover:text-background',
-            'flex items-center gap-2 transition-colors duration-150',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
+    <>
+      <SectionCard
+        icon={<AlertTriangle className="w-4 h-4" strokeWidth={2} />}
+        title="Delete workspace"
+        description="Permanently removes all boards, columns, cards, documents, and member access. This cannot be undone."
+        danger
+      >
+        <div className="flex items-center justify-between">
+          {isOwner ? (
+            <button
+              onClick={() => setDialogOpen(true)}
+              className={cn(
+                'px-4 py-2.5 rounded-xl text-sm font-bold',
+                'bg-destructive/10 text-destructive border border-destructive/20',
+                'hover:bg-destructive hover:text-background hover:border-transparent',
+                'flex items-center gap-2 transition-all duration-150',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
+              )}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              Delete workspace
+            </button>
+          ) : (
+            <p className="text-sm text-outline/70">
+              Only the workspace owner can delete this workspace.
+            </p>
           )}
-        >
-          Delete Workspace
-        </button>
-      )}
+        </div>
+      </SectionCard>
 
       {/* Delete confirmation dialog */}
       <Dialog open={dialogOpen} onOpenChange={handleClose}>
@@ -302,20 +349,21 @@ function DangerZone({ workspaceId, workspaceName, isOwner }: DangerZoneProps) {
             <DialogTitle>Delete workspace</DialogTitle>
             <DialogDescription>
               This will permanently delete{' '}
-              <span className="font-semibold text-on-surface">
-                {workspaceName}
-              </span>{' '}
+              <span className="font-semibold text-on-surface">{workspaceName}</span>{' '}
               and all its contents. To confirm, type the workspace name below.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Typed confirmation input */}
           <div className="space-y-1.5 my-2">
             <label
               htmlFor="delete-confirm"
-              className="text-xs font-medium uppercase tracking-[0.15em] text-outline"
+              className="text-[10px] font-semibold uppercase tracking-[0.12em] text-outline"
             >
-              Type <span className="text-on-surface font-bold">{workspaceName}</span> to confirm
+              Type{' '}
+              <span className="text-on-surface font-bold normal-case tracking-normal">
+                {workspaceName}
+              </span>{' '}
+              to confirm
             </label>
             <input
               id="delete-confirm"
@@ -325,26 +373,33 @@ function DangerZone({ workspaceId, workspaceName, isOwner }: DangerZoneProps) {
               placeholder={workspaceName}
               autoComplete="off"
               className={cn(
-                'w-full bg-surface-container-lowest rounded-lg px-4 py-2.5',
+                'w-full bg-surface-container-lowest rounded-xl px-4 py-2.5',
                 'text-sm text-on-surface placeholder:text-outline/30',
                 'border border-outline-variant/20',
                 'focus:outline-none focus:border-destructive/40',
+                'focus:shadow-[0_0_0_3px_oklch(0.65_0.22_25/10%)]',
                 'transition-all duration-200',
+                confirmMatches && 'border-destructive/40',
               )}
-              aria-describedby={serverError ? 'delete-server-error' : undefined}
             />
+            {confirmValue.length > 0 && !confirmMatches && (
+              <p className="text-[11px] text-outline/60">
+                Keep typing — name must match exactly.
+              </p>
+            )}
+            {confirmMatches && (
+              <p className="flex items-center gap-1 text-[11px] font-medium text-destructive">
+                <AlertTriangle className="size-3 shrink-0" />
+                Confirm below to permanently delete.
+              </p>
+            )}
           </div>
 
-          {/* Server error */}
           {serverError && (
-            <p
-              id="delete-server-error"
-              role="alert"
-              className="flex items-center gap-1.5 text-sm text-destructive"
-            >
-              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-              {serverError}
-            </p>
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-destructive/8 border border-destructive/15">
+              <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+              <p role="alert" className="text-sm text-destructive">{serverError}</p>
+            </div>
           )}
 
           <DialogFooter>
@@ -369,9 +424,9 @@ function DangerZone({ workspaceId, workspaceName, isOwner }: DangerZoneProps) {
               disabled={!confirmMatches || isPending}
               className={cn(
                 'px-4 py-2 rounded-lg text-sm font-bold',
-                'bg-destructive/10 text-destructive',
-                'hover:bg-destructive hover:text-background',
-                'flex items-center gap-2 transition-colors duration-150',
+                'bg-destructive/10 text-destructive border border-destructive/20',
+                'hover:bg-destructive hover:text-background hover:border-transparent',
+                'flex items-center gap-2 transition-all duration-150',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50',
                 'disabled:opacity-40 disabled:pointer-events-none',
               )}
@@ -382,13 +437,16 @@ function DangerZone({ workspaceId, workspaceName, isOwner }: DangerZoneProps) {
                   Deleting…
                 </>
               ) : (
-                'Delete workspace'
+                <>
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Delete workspace
+                </>
               )}
             </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </>
   )
 }
 
@@ -407,48 +465,39 @@ export function SettingsPage() {
   const isOwner = viewerRole === 'owner'
   const canRename = viewerRole === 'owner' || viewerRole === 'admin'
 
-  // ── Loading ─────────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="flex h-full min-h-screen items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-outline" />
+        <Loader2 className="w-5 h-5 animate-spin text-outline" />
       </div>
     )
   }
 
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Topbar */}
       <SettingsTopbar workspaceName={workspace?.name ?? ''} />
 
-      {/* Page content */}
       <div className="flex-1 p-8">
-        <div className="max-w-3xl mx-auto space-y-12">
+        <div className="max-w-2xl mx-auto space-y-8">
 
-          {/* Page heading */}
+          {/* ── Page heading ──────────────────────────────────────── */}
           <div>
-            <p className="df-label-editorial text-primary mb-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary mb-2">
               Configuration
             </p>
-            <h1 className="font-display text-4xl font-extrabold tracking-tight text-on-surface">
+            <h1 className="font-display text-[2rem] font-extrabold tracking-tight text-on-surface leading-none">
               Workspace Settings
             </h1>
           </div>
 
-          {/* Divider */}
-          <div className="h-px bg-outline-variant/10" />
-
-          {/* Rename section */}
+          {/* ── General section ───────────────────────────────────── */}
           <RenameSection
             workspaceId={workspaceId ?? ''}
             currentName={workspace?.name ?? ''}
             canRename={canRename}
           />
 
-          {/* Divider */}
-          <div className="h-px bg-outline-variant/10" />
-
-          {/* Danger zone */}
+          {/* ── Danger zone ───────────────────────────────────────── */}
           <DangerZone
             workspaceId={workspaceId ?? ''}
             workspaceName={workspace?.name ?? ''}

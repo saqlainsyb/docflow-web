@@ -3,35 +3,13 @@ import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface NavItemProps {
-  /** Relative path segment — e.g. "boards", "members", "settings" */
   to: string
   icon: LucideIcon
   label: string
+  badge?: number
 }
 
-/**
- * NavItem
- *
- * A single sidebar navigation link.
- *
- * Active state:
- *   Uses useResolvedPath + useMatch so relative paths ("boards") resolve
- *   correctly inside the /:workspaceId parent route without needing to
- *   know the workspaceId at the call site.
- *
- *   end: false — active when the path starts with this segment, so
- *   /:workspaceId/boards/:boardId still keeps "Boards" highlighted.
- *
- * Icon:
- *   Lucide icons accept strokeWidth. Active state uses strokeWidth={2}
- *   with a filled appearance achieved via the active background + color
- *   combination — no separate filled icon variant needed.
- *
- * Accessibility:
- *   aria-current="page" on the active item — screen readers announce
- *   the current location correctly.
- */
-export function NavItem({ to, icon: Icon, label }: NavItemProps) {
+export function NavItem({ to, icon: Icon, label, badge }: NavItemProps) {
   const navigate = useNavigate()
   const resolved = useResolvedPath(to)
   const match = useMatch({ path: resolved.pathname, end: false })
@@ -42,34 +20,72 @@ export function NavItem({ to, icon: Icon, label }: NavItemProps) {
       onClick={() => navigate(to)}
       aria-current={isActive ? 'page' : undefined}
       className={cn(
-        // Base layout
-        'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl',
-        'text-sm transition-all duration-150 outline-none',
-        // Focus ring — keyboard navigation
+        // Base
+        'relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl',
+        'text-sm transition-all duration-200 outline-none group',
         'focus-visible:ring-2 focus-visible:ring-primary/50',
-        // State variants
+        // State
         isActive
-          ? [
-              'bg-primary/10 text-primary font-medium',
-              // Subtle left-edge accent line
-              'relative before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2',
-              'before:w-0.5 before:h-4 before:rounded-full before:bg-primary',
-            ]
-          : [
-              'text-on-surface-variant font-normal',
-              'hover:bg-surface-container hover:text-on-surface',
-            ],
+          ? 'text-primary font-medium'
+          : 'text-on-surface-variant font-normal hover:text-on-surface',
       )}
     >
-      <Icon
-        className={cn(
-          'w-4.5 h-4.5 shrink-0 transition-colors',
-          isActive ? 'text-primary' : 'text-outline',
-        )}
-        strokeWidth={isActive ? 2.5 : 2}
-        aria-hidden="true"
-      />
-      <span>{label}</span>
+      {/* Active background — rendered separately so it can have its own styles */}
+      {isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 rounded-xl bg-primary/[0.08] border border-primary/[0.12]"
+        />
+      )}
+
+      {/* Hover background */}
+      {!isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-surface-container"
+        />
+      )}
+
+      {/* Active left indicator bar */}
+      {isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-primary"
+        />
+      )}
+
+      {/* Icon */}
+      <span className="relative shrink-0 flex items-center justify-center w-5 h-5">
+        <Icon
+          className={cn(
+            'w-[18px] h-[18px] transition-all duration-200',
+            isActive
+              ? 'text-primary'
+              : 'text-outline group-hover:text-on-surface-variant',
+          )}
+          strokeWidth={isActive ? 2.25 : 1.75}
+          aria-hidden="true"
+        />
+      </span>
+
+      {/* Label */}
+      <span className="relative flex-1 text-left leading-none">{label}</span>
+
+      {/* Badge */}
+      {badge != null && badge > 0 && (
+        <span
+          className={cn(
+            'relative ml-auto shrink-0 min-w-[18px] h-[18px] px-1',
+            'flex items-center justify-center rounded-full',
+            'text-[10px] font-bold leading-none tabular-nums',
+            isActive
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-surface-container-high text-on-surface-variant',
+          )}
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </button>
   )
 }

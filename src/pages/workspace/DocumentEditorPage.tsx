@@ -36,16 +36,24 @@ import { TRANSFORMERS } from "@lexical/markdown";
 import { CollaborationPlugin } from "@lexical/react/LexicalCollaborationPlugin";
 import { LexicalCollaboration } from "@lexical/react/LexicalCollaborationContext";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { HeadingNode, QuoteNode } from "@lexical/rich-text";
+import {
+  HeadingNode,
+  QuoteNode,
+  $isHeadingNode,
+  $createHeadingNode,
+  $createQuoteNode,
+} from "@lexical/rich-text";
+import { $setBlocksType } from "@lexical/selection";
 import { ListItemNode, ListNode } from "@lexical/list";
 import { LinkNode, AutoLinkNode } from "@lexical/link";
 import { CodeNode, CodeHighlightNode } from "@lexical/code";
 import type { Provider } from "@lexical/yjs";
-import { FORMAT_TEXT_COMMAND, FORMAT_ELEMENT_COMMAND } from "lexical";
+import { FORMAT_TEXT_COMMAND, $getSelection, $isRangeSelection } from "lexical";
 import {
   INSERT_UNORDERED_LIST_COMMAND,
   INSERT_ORDERED_LIST_COMMAND,
 } from "@lexical/list";
+import { $createParagraphNode } from "lexical";
 
 // ── Icons
 import {
@@ -355,9 +363,24 @@ const CollaboratorAvatar = memo(
         }}
         transition={{
           // entry animation
-          opacity:  { delay: index * 0.05, type: "spring", stiffness: 420, damping: 22 },
-          scale:    { delay: index * 0.05, type: "spring", stiffness: 420, damping: 22 },
-          x:        { delay: index * 0.05, type: "spring", stiffness: 420, damping: 22 },
+          opacity: {
+            delay: index * 0.05,
+            type: "spring",
+            stiffness: 420,
+            damping: 22,
+          },
+          scale: {
+            delay: index * 0.05,
+            type: "spring",
+            stiffness: 420,
+            damping: 22,
+          },
+          x: {
+            delay: index * 0.05,
+            type: "spring",
+            stiffness: 420,
+            damping: 22,
+          },
           // ring fade
           boxShadow: { duration: 0.5, ease: "easeInOut" },
         }}
@@ -379,7 +402,12 @@ const CollaboratorAvatar = memo(
           <img
             src={user.avatar_url}
             alt={user.name}
-            style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
+            style={{
+              width: "100%",
+              height: "100%",
+              borderRadius: "50%",
+              objectFit: "cover",
+            }}
             onError={() => setImgFailed(true)}
           />
         ) : (
@@ -495,14 +523,75 @@ function ConnectionBadge({ status }: { status: WsStatus }) {
 function ToolbarPlugin() {
   const [editor] = useLexicalComposerContext();
 
+  const [blockType, setBlockType] = useState<string>("paragraph");
+  const [activeFormats, setActiveFormats] = useState({
+    bold: false,
+    italic: false,
+    strikethrough: false,
+    code: false,
+  });
+
+  useEffect(() => {
+    return editor.registerUpdateListener(({ editorState }) => {
+      editorState.read(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection)) return;
+
+        const anchorNode = selection.anchor.getNode();
+        const element =
+          anchorNode.getKey() === "root"
+            ? anchorNode
+            : anchorNode.getTopLevelElementOrThrow();
+
+        if ($isHeadingNode(element)) {
+          setBlockType(element.getTag()); // "h1" | "h2" | "h3"
+        } else {
+          setBlockType(element.getType()); // "paragraph" | "quote" | "code" | etc.
+        }
+
+        setActiveFormats({
+          bold: selection.hasFormat("bold"),
+          italic: selection.hasFormat("italic"),
+          strikethrough: selection.hasFormat("strikethrough"),
+          code: selection.hasFormat("code"),
+        });
+      });
+    });
+  }, [editor]);
+
+  function setHeading(tag: "h1" | "h2" | "h3") {
+    editor.update(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection)) {
+        // If already this heading, toggle back to paragraph
+        if (blockType === tag) {
+          $setBlocksType(selection, () => $createParagraphNode());
+        } else {
+          $setBlocksType(selection, () => $createHeadingNode(tag));
+        }
+      }
+    });
+  }
+
+  function setQuote() {
+    editor.update(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection)) {
+        $setBlocksType(selection, () => $createQuoteNode());
+      }
+    });
+  }
+
   function Btn({
     onClick,
     icon: Icon,
     label,
+    active,
   }: {
     onClick: () => void;
     icon: React.FC<any>;
     label: string;
+    active?: boolean;
   }) {
     return (
       <motion.button
@@ -516,17 +605,22 @@ function ToolbarPlugin() {
         whileTap={{ scale: 0.92 }}
         transition={{ type: "spring", stiffness: 500, damping: 25 }}
         className="w-7 h-7 flex items-center justify-center rounded-lg focus:outline-none transition-colors"
-        style={{ color: "rgba(255,255,255,0.45)" }}
+        style={{
+          background: active ? "rgba(255,255,255,0.12)" : "transparent",
+          color: active ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.45)",
+        }}
         onMouseEnter={(e) =>
           Object.assign(e.currentTarget.style, {
-            background: "rgba(255,255,255,0.07)",
-            color: "rgba(255,255,255,0.8)",
+            background: active
+              ? "rgba(255,255,255,0.16)"
+              : "rgba(255,255,255,0.07)",
+            color: "rgba(255,255,255,0.9)",
           })
         }
         onMouseLeave={(e) =>
           Object.assign(e.currentTarget.style, {
-            background: "transparent",
-            color: "rgba(255,255,255,0.45)",
+            background: active ? "rgba(255,255,255,0.12)" : "transparent",
+            color: active ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.45)",
           })
         }
       >
@@ -554,38 +648,38 @@ function ToolbarPlugin() {
       <Btn
         icon={Heading1}
         label="H1"
-        onClick={() =>
-          editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "h1" as any)
-        }
+        active={blockType === "h1"}
+        onClick={() => setHeading("h1")}
       />
       <Btn
         icon={Heading2}
         label="H2"
-        onClick={() =>
-          editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "h2" as any)
-        }
+        active={blockType === "h2"}
+        onClick={() => setHeading("h2")}
       />
       <Btn
         icon={Heading3}
         label="H3"
-        onClick={() =>
-          editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "h3" as any)
-        }
+        active={blockType === "h3"}
+        onClick={() => setHeading("h3")}
       />
       <Sep />
       <Btn
         icon={Bold}
         label="Bold"
+        active={activeFormats.bold}
         onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")}
       />
       <Btn
         icon={Italic}
         label="Italic"
+        active={activeFormats.italic}
         onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")}
       />
       <Btn
         icon={Strikethrough}
         label="Strikethrough"
+        active={activeFormats.strikethrough}
         onClick={() =>
           editor.dispatchCommand(FORMAT_TEXT_COMMAND, "strikethrough")
         }
@@ -593,6 +687,7 @@ function ToolbarPlugin() {
       <Btn
         icon={Code}
         label="Inline code"
+        active={activeFormats.code}
         onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "code")}
       />
       <Sep />
@@ -613,9 +708,8 @@ function ToolbarPlugin() {
       <Btn
         icon={Quote}
         label="Quote"
-        onClick={() =>
-          editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "quote" as any)
-        }
+        active={blockType === "quote"}
+        onClick={setQuote}
       />
     </div>
   );

@@ -18,6 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { workspacesQueryKey } from '@/hooks/useWorkspaces'
@@ -36,6 +37,10 @@ export function useRenameWorkspace(workspaceId: string) {
     onSuccess: () => {
       // Invalidate the list prefix — cascades to detail queries too
       queryClient.invalidateQueries({ queryKey: workspacesQueryKey })
+      toast.success('Workspace renamed')
+    },
+    onError: () => {
+      toast.error('Failed to rename workspace')
     },
   })
 }

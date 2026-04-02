@@ -18,6 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { boardQueryKey } from '@/hooks/useBoard'
@@ -35,6 +36,10 @@ export function useDeleteCard(boardId: string) {
       queryClient.invalidateQueries({
         queryKey: boardQueryKey(boardId),
       })
+      toast.success('Card deleted')
+    },
+    onError: () => {
+      toast.error('Failed to delete card')
     },
   })
 }

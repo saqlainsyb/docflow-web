@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { boardQueryKey } from '@/hooks/useBoard'
@@ -23,6 +24,10 @@ export function useUpdateBoard(boardId: string) {
       api.patch(ROUTES.boards.update(boardId), payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: boardQueryKey(boardId) })
+      toast.success('Board updated')
+    },
+    onError: () => {
+      toast.error('Failed to update board')
     },
   })
 }

@@ -14,6 +14,7 @@ import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal'
 import { CreateBoardModal } from '@/components/modals/CreateBoardModal'
 import { CreateColumnModal } from '@/components/modals/CreateColumnModal'
 import { CreateCardModal } from '@/components/modals/CreateCardModal'
+import { EditCardModal } from '@/components/modals/EditCardModal'
 
 export function ModalManager() {
   const activeModal = useAppSelector((state) => state.ui.activeModal)
@@ -34,8 +35,7 @@ export function ModalManager() {
       return <CreateCardModal columnId={activeModal.columnId} />
 
     case 'editCard':
-      // Module 6 — TipTap document editor
-      return null
+      return <EditCardModal cardId={activeModal.cardId} />
 
     default:
       return null

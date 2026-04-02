@@ -9,7 +9,9 @@
 //    a. Invalidate ['workspaces'] so the list and switcher update
 //    b. Remove ['workspaces', id] from the cache immediately —
 //       no point refetching a workspace that no longer exists
-//    c. Navigate to / — RootRedirect picks the next workspace or
+//    c. Toast success before navigating — toast survives the unmount
+//       because Sonner is mounted at the app root (AppToaster)
+//    d. Navigate to / — RootRedirect picks the next workspace or
 //       shows the empty state if none remain
 //
 // This mutation is owner-only. The SettingsPage guards the UI,
@@ -22,6 +24,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { workspacesQueryKey } from '@/hooks/useWorkspaces'
@@ -42,8 +45,13 @@ export function useDeleteWorkspace(workspaceId: string) {
       queryClient.removeQueries({ queryKey: workspaceQueryKey(workspaceId) })
       // Invalidate the list so the switcher removes this workspace
       queryClient.invalidateQueries({ queryKey: workspacesQueryKey })
+      // Toast before navigate — Sonner is at app root so it survives the unmount
+      toast.success('Workspace deleted')
       // Navigate to root — RootRedirect handles picking the next workspace
       navigate('/', { replace: true })
+    },
+    onError: () => {
+      toast.error('Failed to delete workspace')
     },
   })
 }

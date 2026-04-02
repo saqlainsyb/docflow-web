@@ -17,18 +17,21 @@
 //   WORKSPACE_NOT_FOUND      → 404 — stale workspaceId
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
-import api from '@/lib/api'
-import { ROUTES } from '@/lib/routes'
-import { workspaceBoardsQueryKey } from '@/hooks/useWorkspaceBoards'
-import type { BoardCreateResponse } from '@/lib/types'
-import type { CreateBoardFormValues } from '@/lib/validations'
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useParams } from "react-router-dom";
+import api from "@/lib/api";
+import { ROUTES } from "@/lib/routes";
+import { workspaceBoardsQueryKey } from "@/hooks/useWorkspaceBoards";
+import type { BoardCreateResponse } from "@/lib/types";
+import type { CreateBoardFormValues } from "@/lib/validations";
+import { toast } from "sonner";
 
 export function useCreateBoard(workspaceId: string) {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const { workspaceId: workspaceIdFromParams } = useParams<{ workspaceId: string }>()
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { workspaceId: workspaceIdFromParams } = useParams<{
+    workspaceId: string;
+  }>();
 
   return useMutation({
     mutationFn: (values: CreateBoardFormValues) =>
@@ -39,11 +42,20 @@ export function useCreateBoard(workspaceId: string) {
     onSuccess: (newBoard) => {
       queryClient.invalidateQueries({
         queryKey: workspaceBoardsQueryKey(workspaceId),
-      })
+      });
 
-      const wsId = workspaceIdFromParams ?? workspaceId
+      toast.success("Board created", {
+        description: `"${newBoard.Title}" is ready. Opening now…`,
+      });
+
+      const wsId = workspaceIdFromParams ?? workspaceId;
       // Backend returns PascalCase field names (no json tags on Board struct)
-      navigate(`/${wsId}/boards/${newBoard.ID}`)
+      navigate(`/${wsId}/boards/${newBoard.ID}`);
     },
-  })
+    onError: () => {
+      toast.error("Failed to create board", {
+        description: "Something went wrong. Please try again.",
+      });
+    },
+  });
 }

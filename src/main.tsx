@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { BrowserRouter } from 'react-router-dom'
 import { store } from '@/store'
 import App from '@/App'
+import { AppToaster } from '@/components/toast'
 import '@/index.css'
 
 const queryClient = new QueryClient({
@@ -32,6 +33,7 @@ createRoot(root).render(
     <Provider store={store}>
       {/* QueryClient inside Redux — queries can read auth tokens from the store */}
       <QueryClientProvider client={queryClient}>
+        <AppToaster />
         {/* Router inside QueryClient — route components can use both */}
         <BrowserRouter>
           <App />

@@ -19,17 +19,18 @@
 // and maps error codes to user-facing messages.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import api from '@/lib/api'
-import { ROUTES } from '@/lib/routes'
-import { workspacesQueryKey } from '@/hooks/useWorkspaces'
-import type { WorkspaceListItem } from '@/lib/types'
-import type { CreateWorkspaceFormValues } from '@/lib/validations'
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import api from "@/lib/api";
+import { ROUTES } from "@/lib/routes";
+import { workspacesQueryKey } from "@/hooks/useWorkspaces";
+import type { WorkspaceListItem } from "@/lib/types";
+import type { CreateWorkspaceFormValues } from "@/lib/validations";
+import { toast } from "sonner";
 
 export function useCreateWorkspace() {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   return useMutation({
     mutationFn: (values: CreateWorkspaceFormValues) =>
@@ -39,9 +40,17 @@ export function useCreateWorkspace() {
 
     onSuccess: (newWorkspace) => {
       // Invalidate the list so WorkspaceSwitcher reflects the new workspace
-      queryClient.invalidateQueries({ queryKey: workspacesQueryKey })
+      queryClient.invalidateQueries({ queryKey: workspacesQueryKey });
+      toast.success("Workspace created", {
+        description: `"${newWorkspace.name}" is ready to go.`,
+      });
       // Navigate into the new workspace immediately
-      navigate(`/${newWorkspace.id}/boards`, { replace: false })
+      navigate(`/${newWorkspace.id}/boards`, { replace: false });
     },
-  })
+    onError: () => {
+      toast.error("Failed to create workspace", {
+        description: "Something went wrong. Please try again.",
+      });
+    },
+  });
 }

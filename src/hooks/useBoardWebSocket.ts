@@ -10,20 +10,18 @@
 //      for boardQueryKey(boardId) — no HTTP re-fetch needed.
 //   4. Reconnects automatically with exponential back-off (1s → 30s cap).
 //   5. Cleans up on unmount: closes the socket, clears the Redux status key.
+//   6. Shows bottom-right presence toasts when users join or leave the board.
 //
 // Called once at the top of BoardPage. Returns nothing — pure side effect.
 //
-// Bug fixed (refresh race):
-//   The effect now depends on [boardId, accessToken]. On a fresh page load,
-//   accessToken starts as null while useAuthBootstrap rehydrates from the
-//   refresh-token cookie. The previous version depended only on [boardId],
-//   so connect() would fire immediately with a null token and bail out silently,
-//   leaving the socket permanently unopened after a refresh.
+// Presence events (USER_JOINED / USER_LEFT):
+//   These require a small backend addition — see internal/ws/hub.go and
+//   internal/ws/protocol.go. The BoardRoom.Run() loop must broadcast these
+//   events on client register/unregister. BoardClient must also carry a `name`
+//   field, populated from the JWT at connection time.
 //
-//   To avoid spurious reconnects when the Axios interceptor rotates the access
-//   token mid-session, connect() checks whether a healthy socket already exists
-//   (OPEN or CONNECTING) and skips re-connecting if so. A token rotation alone
-//   will not cause an unnecessary teardown.
+//   Until those backend changes land, the presence cases below are silently
+//   no-ops — no breakage, just no toasts yet.
 //
 // Event → cache update map:
 //   CARD_CREATED     → append card to target column's cards array
@@ -36,6 +34,8 @@
 //   COLUMN_RENAMED   → patch title in matching column
 //   COLUMN_REORDERED → patch position + re-sort columns array
 //   COLUMN_DELETED   → remove column + all its cards from state
+//   USER_JOINED      → bottom-right presence toast (no cache change)
+//   USER_LEFT        → bottom-right presence toast (no cache change)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useCallback } from 'react'
@@ -43,6 +43,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { setBoardStatus, clearBoardStatus } from '@/store'
 import { boardQueryKey } from '@/hooks/useBoard'
+import { toast } from '@/components/toast'
 import type {
   BoardDetailResponse,
   CardResponse,
@@ -62,11 +63,16 @@ type BoardEvent =
   | { type: 'COLUMN_RENAMED'; column_id: string; title: string }
   | { type: 'COLUMN_REORDERED'; column_id: string; position: number }
   | { type: 'COLUMN_DELETED'; column_id: string }
+  // ── Presence events — requires backend to emit USER_JOINED / USER_LEFT ──────
+  // BoardRoom.Run() must broadcast these on register/unregister.
+  // BoardClient must carry a `name` field populated from the JWT claims.
+  | { type: 'USER_JOINED'; user_id: string; name: string }
+  | { type: 'USER_LEFT';   user_id: string; name: string }
 
 // ── Reconnect timing ──────────────────────────────────────────────────────────
 
 const BACKOFF_BASE_MS = 1_000
-const BACKOFF_MAX_MS = 30_000
+const BACKOFF_MAX_MS  = 30_000
 
 function nextBackoff(attempt: number): number {
   return Math.min(BACKOFF_BASE_MS * Math.pow(2, attempt), BACKOFF_MAX_MS)
@@ -79,14 +85,15 @@ type BoardUpdater = (prev: BoardDetailResponse) => BoardDetailResponse
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useBoardWebSocket(boardId: string | undefined): void {
-  const dispatch = useAppDispatch()
-  const queryClient = useQueryClient()
-  const accessToken = useAppSelector((s) => s.auth.accessToken)
+  const dispatch     = useAppDispatch()
+  const queryClient  = useQueryClient()
+  const accessToken  = useAppSelector((s) => s.auth.accessToken)
+  const currentUser  = useAppSelector((s) => s.auth.user)
 
-  const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const attemptRef = useRef(0)
-  const unmountedRef = useRef(false)
+  const wsRef              = useRef<WebSocket | null>(null)
+  const reconnectTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const attemptRef         = useRef(0)
+  const unmountedRef       = useRef(false)
 
   // ── Cache updater ─────────────────────────────────────────────────────────
 
@@ -104,6 +111,35 @@ export function useBoardWebSocket(boardId: string | undefined): void {
 
   const handleEvent = useCallback(
     (event: BoardEvent, currentBoardId: string) => {
+
+      // ── Presence events — toast only, never touch the cache ──────────────
+      //
+      // Skip events for the current user (they don't need to see their own
+      // join/leave notification). Fall back to "Someone" if name is missing
+      // (e.g. running against an older backend that doesn't send it yet).
+      if (event.type === 'USER_JOINED') {
+        if (event.user_id === currentUser?.id) return
+        const name = event.name || 'Someone'
+        toast(`${name} joined the board`, {
+          position:    'bottom-right',
+          duration:    3500,
+          description: 'Now viewing this board',
+        })
+        return
+      }
+
+      if (event.type === 'USER_LEFT') {
+        if (event.user_id === currentUser?.id) return
+        const name = event.name || 'Someone'
+        toast(`${name} left the board`, {
+          position: 'bottom-right',
+          duration: 3000,
+        })
+        return
+      }
+
+      // ── All other events — update the TanStack Query cache ───────────────
+
       updateCache(currentBoardId, (prev) => {
         switch (event.type) {
           case 'CARD_CREATED': {
@@ -164,7 +200,7 @@ export function useBoardWebSocket(boardId: string | undefined): void {
             const updatedCard: CardResponse = {
               ...movedCard,
               column_id: event.column_id,
-              position: event.position,
+              position:  event.position,
             }
 
             return {
@@ -272,7 +308,7 @@ export function useBoardWebSocket(boardId: string | undefined): void {
         }
       })
     },
-    [updateCache],
+    [updateCache, currentUser?.id],
   )
 
   // ── Effect: open socket when boardId and accessToken are both available ────

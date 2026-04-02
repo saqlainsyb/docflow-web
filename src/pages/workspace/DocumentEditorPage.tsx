@@ -231,7 +231,12 @@ function useAwarenessUsers(
       const result: ConnectedUser[] = [];
       provider.awareness.getStates().forEach((state, clientId) => {
         const u = state.user as AwarenessUser | undefined;
-        if (u?.name) result.push({ clientId, ...u });
+        if (u?.name)
+          result.push({
+            clientId,
+            ...u,
+            typing: state.typing === true, // ← top-level field, not inside state.user
+          });
       });
       result.sort((a, b) => a.clientId - b.clientId);
       setUsers(result);
@@ -252,12 +257,20 @@ function usePresenceToasts(
   provider: WebsocketProvider | null,
   myClientId: number,
 ) {
-  // Cache clientId → display name so we can look up names on departure
-  // (Yjs removes the state before the 'removed' event fires)
   const prevNamesRef = useRef<Map<number, string>>(new Map());
 
   useEffect(() => {
     if (!provider) return;
+
+    // When this client first connects, the y-websocket server immediately
+    // broadcasts all currently-present awareness states as a sync burst.
+    // Yjs fires those as `added` events — identical to a genuine new join.
+    // We suppress join toasts during this initial window so that users who
+    // were already in the room don't trigger "X joined" for the newcomer.
+    let isInitialSync = true;
+    const initialSyncTimer = setTimeout(() => {
+      isInitialSync = false;
+    }, 1500); // 1.5 s covers the initial awareness sync burst
 
     const handleChange = ({
       added,
@@ -271,30 +284,31 @@ function usePresenceToasts(
       const states = provider.awareness.getStates();
 
       // ── Cache names for all visible clients (join + cursor moves) ──────
-      // Do this first so removals below can fall back to the cache even if
-      // the state is gone by the time we process the 'removed' array.
       [...added, ...updated].forEach((clientId) => {
         const user = states.get(clientId)?.user as AwarenessUser | undefined;
         if (user?.name) prevNamesRef.current.set(clientId, user.name);
       });
 
       // ── Join ───────────────────────────────────────────────────────────
-      for (const clientId of added) {
-        if (clientId === myClientId) continue;
-        const name = (states.get(clientId)?.user as AwarenessUser | undefined)
-          ?.name;
-        if (!name) continue;
-        toast(`${name} joined`, {
-          position: "bottom-right",
-          duration: 3500,
-          description: "Now editing this document",
-        });
+      // Skip toasts during the initial sync window — those `added` events
+      // are pre-existing users being synced to us, not genuine new arrivals.
+      if (!isInitialSync) {
+        for (const clientId of added) {
+          if (clientId === myClientId) continue;
+          const name = (states.get(clientId)?.user as AwarenessUser | undefined)
+            ?.name;
+          if (!name) continue;
+          toast(`${name} joined`, {
+            position: "bottom-right",
+            duration: 3500,
+            description: "Now editing this document",
+          });
+        }
       }
 
       // ── Leave ──────────────────────────────────────────────────────────
       for (const clientId of removed) {
         if (clientId === myClientId) continue;
-        // State is gone by now — use the name we cached on their last presence update
         const name = prevNamesRef.current.get(clientId);
         if (!name) continue;
         toast(`${name} left`, {
@@ -307,6 +321,7 @@ function usePresenceToasts(
 
     provider.awareness.on("change", handleChange);
     return () => {
+      clearTimeout(initialSyncTimer);
       provider.awareness.off("change", handleChange);
     };
   }, [provider, myClientId]);
@@ -324,16 +339,27 @@ const CollaboratorAvatar = memo(
   ({ user, index }: { user: ConnectedUser; index: number }) => {
     const [imgFailed, setImgFailed] = useState(false);
     const ringColor = user.color + "e6";
-    const glowColor = user.color + "59";
+    const glowColor = user.color + "40";
+
+    const idleBoxShadow = `0 0 0 2px oklch(0.13 0.015 265), 0 0 0 3.5px oklch(0.30 0.012 265)`;
+    const typingBoxShadow = `0 0 0 2px oklch(0.13 0.015 265), 0 0 0 3.5px ${ringColor}, 0 0 8px 2px ${glowColor}`;
+
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.6, x: 6 }}
-        animate={{ opacity: 1, scale: 1, x: 0 }}
+        animate={{
+          opacity: 1,
+          scale: 1,
+          x: 0,
+          boxShadow: user.typing ? typingBoxShadow : idleBoxShadow,
+        }}
         transition={{
-          delay: index * 0.05,
-          type: "spring",
-          stiffness: 420,
-          damping: 22,
+          // entry animation
+          opacity:  { delay: index * 0.05, type: "spring", stiffness: 420, damping: 22 },
+          scale:    { delay: index * 0.05, type: "spring", stiffness: 420, damping: 22 },
+          x:        { delay: index * 0.05, type: "spring", stiffness: 420, damping: 22 },
+          // ring fade
+          boxShadow: { duration: 0.5, ease: "easeInOut" },
         }}
         title={user.name}
         style={{
@@ -345,12 +371,6 @@ const CollaboratorAvatar = memo(
           zIndex: MAX_VISIBLE - index,
           ["--ring-color" as any]: ringColor,
           ["--ring-glow" as any]: glowColor,
-          boxShadow: user.typing
-            ? undefined
-            : `0 0 0 2px oklch(0.13 0.015 265), 0 0 0 3.5px ${ringColor}`,
-          animation: user.typing
-            ? "df-typing-ring 1.2s ease-in-out infinite"
-            : "none",
           cursor: "default",
         }}
         className="hover:scale-105 hover:z-50!"
@@ -359,12 +379,7 @@ const CollaboratorAvatar = memo(
           <img
             src={user.avatar_url}
             alt={user.name}
-            style={{
-              width: "100%",
-              height: "100%",
-              borderRadius: "50%",
-              objectFit: "cover",
-            }}
+            style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
             onError={() => setImgFailed(true)}
           />
         ) : (

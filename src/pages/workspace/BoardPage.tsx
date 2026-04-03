@@ -11,8 +11,8 @@
 // DnD, sensors, and all other existing logic are untouched.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useCallback, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   DndContext,
   DragOverlay,
@@ -25,13 +25,13 @@ import {
   type DragOverEvent,
   type DragEndEvent,
   type DragCancelEvent,
-} from '@dnd-kit/core'
+} from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+} from "@dnd-kit/sortable";
 import {
   ArrowLeft,
   Share2,
@@ -45,21 +45,31 @@ import {
   Sparkles,
   Pencil,
   Trash2,
-} from 'lucide-react'
-import { motion, AnimatePresence } from 'motion/react'
-import { useAppDispatch } from '@/store/hooks'
-import { openModal } from '@/store'
-import { useBoard } from '@/hooks/useBoard'
-import { useMoveCard } from '@/hooks/useMoveCard'
-import { useBoardWebSocket } from '@/hooks/useBoardWebSocket'
-import { useUpdateBoard } from '@/hooks/useUpdateBoard'
-import { useDeleteBoard } from '@/hooks/useDeleteBoard'
-import { Column } from '@/components/board/Column'
-import { Card } from '@/components/board/Card'
-import { between, before, after, needsRebalance, rebalance } from '@/lib/fractional'
-import { cn } from '@/lib/utils'
-import { getInitials } from '@/lib/utils'
-import type { BoardDetailResponse, CardResponse, ColumnWithCards } from '@/lib/types'
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { openModal } from "@/store";
+import { useBoard } from "@/hooks/useBoard";
+import { useMoveCard } from "@/hooks/useMoveCard";
+import { useBoardWebSocket } from "@/hooks/useBoardWebSocket";
+import { useUpdateBoard } from "@/hooks/useUpdateBoard";
+import { useDeleteBoard } from "@/hooks/useDeleteBoard";
+import { Column } from "@/components/board/Column";
+import { Card } from "@/components/board/Card";
+import {
+  between,
+  before,
+  after,
+  needsRebalance,
+  rebalance,
+} from "@/lib/fractional";
+import { cn } from "@/lib/utils";
+import { getInitials } from "@/lib/utils";
+import type {
+  BoardDetailResponse,
+  CardResponse,
+  ColumnWithCards,
+} from "@/lib/types";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -67,7 +77,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuLabel,
-} from '@/components/ui/dropdown-menu'
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -75,78 +85,90 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from '@/components/ui/dialog'
+} from "@/components/ui/dialog";
+import { ShareBoardDialog } from "@/components/board/ShareBoardDialog";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
 const COLUMN_ACCENT_COLORS = [
-  { dot: '#00DAF3', glow: 'rgba(0,218,243,0.18)' },    // cyan
-  { dot: '#A78BFA', glow: 'rgba(167,139,250,0.18)' },  // violet
-  { dot: '#34D399', glow: 'rgba(52,211,153,0.18)' },   // emerald
-  { dot: '#FB923C', glow: 'rgba(251,146,60,0.18)' },   // orange
-  { dot: '#60A5FA', glow: 'rgba(96,165,250,0.18)' },   // blue
-  { dot: '#F472B6', glow: 'rgba(244,114,182,0.18)' },  // pink
-]
+  { dot: "#00DAF3", glow: "rgba(0,218,243,0.18)" }, // cyan
+  { dot: "#A78BFA", glow: "rgba(167,139,250,0.18)" }, // violet
+  { dot: "#34D399", glow: "rgba(52,211,153,0.18)" }, // emerald
+  { dot: "#FB923C", glow: "rgba(251,146,60,0.18)" }, // orange
+  { dot: "#60A5FA", glow: "rgba(96,165,250,0.18)" }, // blue
+  { dot: "#F472B6", glow: "rgba(244,114,182,0.18)" }, // pink
+];
 
 // ── Shared dialog styles ──────────────────────────────────────────────────────
 const DIALOG_CONTENT_STYLE = {
-  background: 'linear-gradient(160deg, oklch(0.175 0.018 265) 0%, oklch(0.155 0.014 265) 100%)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  boxShadow: '0 32px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
-  borderRadius: '1.25rem',
-}
+  background:
+    "linear-gradient(160deg, oklch(0.175 0.018 265) 0%, oklch(0.155 0.014 265) 100%)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  boxShadow: "0 32px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)",
+  borderRadius: "1.25rem",
+};
 
 // ── BoardTopbar ───────────────────────────────────────────────────────────────
 
 interface BoardTopbarProps {
-  board: BoardDetailResponse
-  workspaceId: string
-  onBack: () => void
-  onShareClick: () => void
+  board: BoardDetailResponse;
+  workspaceId: string;
+  onBack: () => void;
+  onShareClick: () => void;
 }
 
-function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarProps) {
-  const navigate = useNavigate()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [renameValue, setRenameValue] = useState(board.title)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const renameInputRef = useRef<HTMLInputElement>(null)
+function BoardTopbar({
+  board,
+  workspaceId,
+  onBack,
+  onShareClick,
+}: BoardTopbarProps) {
+  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState(board.title);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const { mutate: updateBoard, isPending: isRenaming } = useUpdateBoard(board.id)
-  const { mutate: deleteBoard, isPending: isDeleting } = useDeleteBoard(board.id, workspaceId)
+  const { mutate: updateBoard, isPending: isRenaming } = useUpdateBoard(
+    board.id,
+  );
+  const { mutate: deleteBoard, isPending: isDeleting } = useDeleteBoard(
+    board.id,
+    workspaceId,
+  );
 
-  const visibleMembers = board.members.slice(0, 4)
-  const overflowCount = board.members.length - visibleMembers.length
-  const totalCards = board.columns.reduce((acc, col) => acc + col.cards.length, 0)
-  const isPublic = board.visibility === 'workspace'
+  const visibleMembers = board.members.slice(0, 4);
+  const overflowCount = board.members.length - visibleMembers.length;
+  const totalCards = board.columns.reduce(
+    (acc, col) => acc + col.cards.length,
+    0,
+  );
+  const isPublic = board.visibility === "workspace";
 
   function openRename() {
-    setRenameValue(board.title)
-    setMenuOpen(false)
-    setRenameOpen(true)
-    setTimeout(() => renameInputRef.current?.select(), 80)
+    setRenameValue(board.title);
+    setMenuOpen(false);
+    setRenameOpen(true);
+    setTimeout(() => renameInputRef.current?.select(), 80);
   }
 
   function handleRename() {
-    const trimmed = renameValue.trim()
+    const trimmed = renameValue.trim();
     if (!trimmed || trimmed === board.title) {
-      setRenameOpen(false)
-      return
+      setRenameOpen(false);
+      return;
     }
-    updateBoard(
-      { title: trimmed },
-      { onSuccess: () => setRenameOpen(false) },
-    )
+    updateBoard({ title: trimmed }, { onSuccess: () => setRenameOpen(false) });
   }
 
   function handleDelete() {
     deleteBoard(undefined, {
       onSuccess: () => {
-        setDeleteOpen(false)
-        navigate(`/${workspaceId}/boards`)
+        setDeleteOpen(false);
+        navigate(`/${workspaceId}/boards`);
       },
-    })
+    });
   }
 
   return (
@@ -157,10 +179,10 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         className="h-16 flex items-center justify-between px-5 shrink-0 relative z-40"
         style={{
-          background: 'oklch(0.13 0.015 265 / 0.88)',
-          backdropFilter: 'blur(24px) saturate(180%)',
-          borderBottom: '1px solid rgba(255,255,255,0.055)',
-          boxShadow: '0 1px 0 rgba(0,218,243,0.06)',
+          background: "oklch(0.13 0.015 265 / 0.88)",
+          backdropFilter: "blur(24px) saturate(180%)",
+          borderBottom: "1px solid rgba(255,255,255,0.055)",
+          boxShadow: "0 1px 0 rgba(0,218,243,0.06)",
         }}
       >
         {/* Left: back + board identity */}
@@ -171,15 +193,15 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
             aria-label="Back to boards"
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.94 }}
-            transition={{ type: 'spring', stiffness: 450, damping: 25 }}
+            transition={{ type: "spring", stiffness: 450, damping: 25 }}
             className={cn(
-              'w-9 h-9 rounded-xl flex items-center justify-center shrink-0',
-              'text-on-surface-variant',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+              "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
+              "text-on-surface-variant",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
             )}
             style={{
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.07)',
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.07)",
             }}
           >
             <ArrowLeft className="w-4 h-4" />
@@ -193,7 +215,7 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
             <div className="flex items-center gap-2.5 min-w-0">
               <h1
                 className="font-display font-bold text-[15px] tracking-tight text-on-surface truncate"
-                style={{ fontFamily: 'var(--df-font-display)' }}
+                style={{ fontFamily: "var(--df-font-display)" }}
               >
                 {board.title}
               </h1>
@@ -202,12 +224,20 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               <span
                 className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
                 style={{
-                  background: isPublic ? 'rgba(52,211,153,0.10)' : 'rgba(255,255,255,0.06)',
-                  border: isPublic ? '1px solid rgba(52,211,153,0.20)' : '1px solid rgba(255,255,255,0.08)',
-                  color: isPublic ? '#34D399' : 'rgba(255,255,255,0.4)',
+                  background: isPublic
+                    ? "rgba(52,211,153,0.10)"
+                    : "rgba(255,255,255,0.06)",
+                  border: isPublic
+                    ? "1px solid rgba(52,211,153,0.20)"
+                    : "1px solid rgba(255,255,255,0.08)",
+                  color: isPublic ? "#34D399" : "rgba(255,255,255,0.4)",
                 }}
               >
-                {isPublic ? <Globe className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
+                {isPublic ? (
+                  <Globe className="w-2.5 h-2.5" />
+                ) : (
+                  <Lock className="w-2.5 h-2.5" />
+                )}
                 {board.visibility}
               </span>
             </div>
@@ -237,18 +267,23 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
                     key={member.user_id}
                     initial={{ opacity: 0, scale: 0.7, x: 8 }}
                     animate={{ opacity: 1, scale: 1, x: 0 }}
-                    transition={{ delay: i * 0.06, type: 'spring', stiffness: 400, damping: 22 }}
+                    transition={{
+                      delay: i * 0.06,
+                      type: "spring",
+                      stiffness: 400,
+                      damping: 22,
+                    }}
                     title={`${member.name} · ${member.role}`}
                     className={cn(
-                      'w-8 h-8 rounded-full shrink-0',
-                      'flex items-center justify-center text-[9px] font-bold select-none',
-                      'cursor-default',
+                      "w-8 h-8 rounded-full shrink-0",
+                      "flex items-center justify-center text-[9px] font-bold select-none",
+                      "cursor-default",
                     )}
                     style={{
-                      background: 'oklch(0.38 0.16 285)',
-                      color: 'oklch(0.88 0.08 285)',
-                      border: '2px solid oklch(0.13 0.015 265)',
-                      boxShadow: '0 0 0 1px rgba(255,255,255,0.06)',
+                      background: "oklch(0.38 0.16 285)",
+                      color: "oklch(0.88 0.08 285)",
+                      border: "2px solid oklch(0.13 0.015 265)",
+                      boxShadow: "0 0 0 1px rgba(255,255,255,0.06)",
                     }}
                   >
                     {member.avatar_url ? (
@@ -267,7 +302,7 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               {overflowCount > 0 && (
                 <span
                   className="text-[11px] font-bold"
-                  style={{ color: 'rgba(255,255,255,0.4)' }}
+                  style={{ color: "rgba(255,255,255,0.4)" }}
                 >
                   +{overflowCount} more
                 </span>
@@ -275,7 +310,7 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
 
               <span
                 className="flex items-center gap-1 text-[11px]"
-                style={{ color: 'rgba(255,255,255,0.3)' }}
+                style={{ color: "rgba(255,255,255,0.3)" }}
               >
                 <Users className="w-2.75 h-2.75" />
                 {board.members.length}
@@ -291,16 +326,17 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
             onClick={onShareClick}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 450, damping: 25 }}
+            transition={{ type: "spring", stiffness: 450, damping: 25 }}
             className={cn(
-              'flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-              'transition-colors',
+              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+              "transition-colors",
             )}
             style={{
-              background: 'linear-gradient(135deg, oklch(0.82 0.14 198 / 0.15) 0%, oklch(0.42 0.09 198 / 0.10) 100%)',
-              border: '1px solid oklch(0.82 0.14 198 / 0.22)',
-              color: 'oklch(0.82 0.14 198)',
+              background:
+                "linear-gradient(135deg, oklch(0.82 0.14 198 / 0.15) 0%, oklch(0.42 0.09 198 / 0.10) 100%)",
+              border: "1px solid oklch(0.82 0.14 198 / 0.22)",
+              color: "oklch(0.82 0.14 198)",
             }}
           >
             <Share2 className="w-3.5 h-3.5" />
@@ -308,25 +344,28 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
           </motion.button>
 
           {/* ── Board ⋯ menu — ALWAYS mounted, visibility via opacity ──────── */}
-          <DropdownMenu
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-          >
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <motion.button
                 whileHover={{ scale: 1.06 }}
                 whileTap={{ scale: 0.94 }}
-                transition={{ type: 'spring', stiffness: 450, damping: 25 }}
+                transition={{ type: "spring", stiffness: 450, damping: 25 }}
                 aria-label="Board options"
                 className={cn(
-                  'w-9 h-9 flex items-center justify-center rounded-xl',
-                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-                  'transition-colors',
+                  "w-9 h-9 flex items-center justify-center rounded-xl",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                  "transition-colors",
                 )}
                 style={{
-                  background: menuOpen ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.05)',
-                  border: menuOpen ? '1px solid rgba(255,255,255,0.14)' : '1px solid rgba(255,255,255,0.07)',
-                  color: menuOpen ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.55)',
+                  background: menuOpen
+                    ? "rgba(255,255,255,0.10)"
+                    : "rgba(255,255,255,0.05)",
+                  border: menuOpen
+                    ? "1px solid rgba(255,255,255,0.14)"
+                    : "1px solid rgba(255,255,255,0.07)",
+                  color: menuOpen
+                    ? "rgba(255,255,255,0.90)"
+                    : "rgba(255,255,255,0.55)",
                 }}
               >
                 <MoreHorizontal className="w-4 h-4" />
@@ -338,31 +377,39 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               sideOffset={8}
               className="w-52"
               style={{
-                background: 'linear-gradient(160deg, oklch(0.19 0.018 265) 0%, oklch(0.16 0.014 265) 100%)',
-                border: '1px solid rgba(255,255,255,0.09)',
-                boxShadow: '0 16px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)',
-                borderRadius: '0.875rem',
-                padding: '6px',
+                background:
+                  "linear-gradient(160deg, oklch(0.19 0.018 265) 0%, oklch(0.16 0.014 265) 100%)",
+                border: "1px solid rgba(255,255,255,0.09)",
+                boxShadow:
+                  "0 16px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)",
+                borderRadius: "0.875rem",
+                padding: "6px",
               }}
             >
               <DropdownMenuLabel
                 className="text-[10px] font-bold uppercase tracking-widest px-2 pb-1 truncate max-w-[180px]"
-                style={{ color: 'rgba(255,255,255,0.28)' }}
+                style={{ color: "rgba(255,255,255,0.28)" }}
               >
                 Board settings
               </DropdownMenuLabel>
               <DropdownMenuSeparator
-                style={{ background: 'rgba(255,255,255,0.06)', margin: '4px 0' }}
+                style={{
+                  background: "rgba(255,255,255,0.06)",
+                  margin: "4px 0",
+                }}
               />
 
               <DropdownMenuItem
                 onClick={openRename}
                 className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
-                style={{ color: 'rgba(255,255,255,0.72)' }}
+                style={{ color: "rgba(255,255,255,0.72)" }}
               >
                 <div
                   className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)' }}
+                  style={{
+                    background: "rgba(255,255,255,0.07)",
+                    color: "rgba(255,255,255,0.55)",
+                  }}
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </div>
@@ -370,17 +417,26 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               </DropdownMenuItem>
 
               <DropdownMenuSeparator
-                style={{ background: 'rgba(255,255,255,0.06)', margin: '4px 0' }}
+                style={{
+                  background: "rgba(255,255,255,0.06)",
+                  margin: "4px 0",
+                }}
               />
 
               <DropdownMenuItem
-                onClick={() => { setMenuOpen(false); setDeleteOpen(true) }}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setDeleteOpen(true);
+                }}
                 className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
-                style={{ color: 'rgba(239,68,68,0.85)' }}
+                style={{ color: "rgba(239,68,68,0.85)" }}
               >
                 <div
                   className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-                  style={{ background: 'rgba(239,68,68,0.12)', color: '#EF4444' }}
+                  style={{
+                    background: "rgba(239,68,68,0.12)",
+                    color: "#EF4444",
+                  }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </div>
@@ -400,13 +456,16 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
           <DialogHeader className="px-6 pt-6 pb-4">
             <DialogTitle
               className="text-base font-bold"
-              style={{ color: 'oklch(0.93 0.012 265)', fontFamily: 'var(--df-font-display)' }}
+              style={{
+                color: "oklch(0.93 0.012 265)",
+                fontFamily: "var(--df-font-display)",
+              }}
             >
               Rename board
             </DialogTitle>
             <DialogDescription
               className="text-[13px] mt-1"
-              style={{ color: 'rgba(255,255,255,0.38)' }}
+              style={{ color: "rgba(255,255,255,0.38)" }}
             >
               Give this board a new name.
             </DialogDescription>
@@ -419,24 +478,26 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleRename()
-                if (e.key === 'Escape') setRenameOpen(false)
+                if (e.key === "Enter") handleRename();
+                if (e.key === "Escape") setRenameOpen(false);
               }}
               placeholder="Board name"
               maxLength={100}
               className="w-full rounded-xl px-3.5 py-2.5 text-sm font-medium outline-none transition-all"
               style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.10)',
-                color: 'oklch(0.91 0.015 265)',
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.10)",
+                color: "oklch(0.91 0.015 265)",
               }}
               onFocus={(e) => {
-                e.currentTarget.style.borderColor = 'oklch(0.82 0.14 198 / 0.45)'
-                e.currentTarget.style.boxShadow = '0 0 0 3px oklch(0.82 0.14 198 / 0.10)'
+                e.currentTarget.style.borderColor =
+                  "oklch(0.82 0.14 198 / 0.45)";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px oklch(0.82 0.14 198 / 0.10)";
               }}
               onBlur={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)'
-                e.currentTarget.style.boxShadow = 'none'
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
+                e.currentTarget.style.boxShadow = "none";
               }}
             />
           </div>
@@ -447,29 +508,38 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               disabled={isRenaming}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-50"
               style={{
-                border: '1px solid rgba(255,255,255,0.09)',
-                color: 'rgba(255,255,255,0.50)',
-                background: 'transparent',
+                border: "1px solid rgba(255,255,255,0.09)",
+                color: "rgba(255,255,255,0.50)",
+                background: "transparent",
               }}
               onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
-                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.80)'
+                (e.currentTarget as HTMLElement).style.background =
+                  "rgba(255,255,255,0.05)";
+                (e.currentTarget as HTMLElement).style.color =
+                  "rgba(255,255,255,0.80)";
               }}
               onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.50)'
+                (e.currentTarget as HTMLElement).style.background =
+                  "transparent";
+                (e.currentTarget as HTMLElement).style.color =
+                  "rgba(255,255,255,0.50)";
               }}
             >
               Cancel
             </button>
             <button
               onClick={handleRename}
-              disabled={isRenaming || !renameValue.trim() || renameValue.trim() === board.title}
+              disabled={
+                isRenaming ||
+                !renameValue.trim() ||
+                renameValue.trim() === board.title
+              }
               className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-40"
               style={{
-                background: 'linear-gradient(135deg, oklch(0.82 0.14 198 / 0.22) 0%, oklch(0.55 0.12 198 / 0.30) 100%)',
-                border: '1px solid oklch(0.82 0.14 198 / 0.30)',
-                color: 'oklch(0.82 0.14 198)',
+                background:
+                  "linear-gradient(135deg, oklch(0.82 0.14 198 / 0.22) 0%, oklch(0.55 0.12 198 / 0.30) 100%)",
+                border: "1px solid oklch(0.82 0.14 198 / 0.30)",
+                color: "oklch(0.82 0.14 198)",
               }}
             >
               {isRenaming ? (
@@ -478,7 +548,7 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
                   Saving…
                 </span>
               ) : (
-                'Rename'
+                "Rename"
               )}
             </button>
           </DialogFooter>
@@ -494,24 +564,33 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
           <DialogHeader className="px-6 pt-6 pb-4">
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-              style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.20)' }}
+              style={{
+                background: "rgba(239,68,68,0.12)",
+                border: "1px solid rgba(239,68,68,0.20)",
+              }}
             >
-              <Trash2 className="w-5 h-5" style={{ color: '#EF4444' }} />
+              <Trash2 className="w-5 h-5" style={{ color: "#EF4444" }} />
             </div>
             <DialogTitle
               className="text-base font-bold"
-              style={{ color: 'oklch(0.93 0.012 265)', fontFamily: 'var(--df-font-display)' }}
+              style={{
+                color: "oklch(0.93 0.012 265)",
+                fontFamily: "var(--df-font-display)",
+              }}
             >
               Delete "{board.title}"?
             </DialogTitle>
             <DialogDescription
               className="text-[13px] mt-1 leading-relaxed"
-              style={{ color: 'rgba(255,255,255,0.38)' }}
+              style={{ color: "rgba(255,255,255,0.38)" }}
             >
-              This will permanently delete the board and all{' '}
-              <span style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>
-                {board.columns.length} column{board.columns.length !== 1 ? 's' : ''}
-              </span>{' '}
+              This will permanently delete the board and all{" "}
+              <span
+                style={{ color: "rgba(255,255,255,0.65)", fontWeight: 600 }}
+              >
+                {board.columns.length} column
+                {board.columns.length !== 1 ? "s" : ""}
+              </span>{" "}
               and every card inside them. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -522,17 +601,21 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               disabled={isDeleting}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-50"
               style={{
-                border: '1px solid rgba(255,255,255,0.09)',
-                color: 'rgba(255,255,255,0.50)',
-                background: 'transparent',
+                border: "1px solid rgba(255,255,255,0.09)",
+                color: "rgba(255,255,255,0.50)",
+                background: "transparent",
               }}
               onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
-                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.80)'
+                (e.currentTarget as HTMLElement).style.background =
+                  "rgba(255,255,255,0.05)";
+                (e.currentTarget as HTMLElement).style.color =
+                  "rgba(255,255,255,0.80)";
               }}
               onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLElement).style.background = 'transparent'
-                ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.50)'
+                (e.currentTarget as HTMLElement).style.background =
+                  "transparent";
+                (e.currentTarget as HTMLElement).style.color =
+                  "rgba(255,255,255,0.50)";
               }}
             >
               Cancel
@@ -542,15 +625,18 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
               disabled={isDeleting}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-70"
               style={{
-                background: 'oklch(0.55 0.22 25)',
-                border: '1px solid rgba(239,68,68,0.30)',
-                color: 'white',
+                background: "oklch(0.55 0.22 25)",
+                border: "1px solid rgba(239,68,68,0.30)",
+                color: "white",
               }}
               onMouseEnter={(e) => {
-                if (!isDeleting) (e.currentTarget as HTMLElement).style.background = 'oklch(0.60 0.22 25)'
+                if (!isDeleting)
+                  (e.currentTarget as HTMLElement).style.background =
+                    "oklch(0.60 0.22 25)";
               }}
               onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLElement).style.background = 'oklch(0.55 0.22 25)'
+                (e.currentTarget as HTMLElement).style.background =
+                  "oklch(0.55 0.22 25)";
               }}
             >
               {isDeleting ? (
@@ -559,20 +645,20 @@ function BoardTopbar({ board, workspaceId, onBack, onShareClick }: BoardTopbarPr
                   Deleting…
                 </span>
               ) : (
-                'Delete board'
+                "Delete board"
               )}
             </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
-  )
+  );
 }
 
 // ── AddColumnButton ───────────────────────────────────────────────────────────
 
 function AddColumnButton({ onClick }: { onClick: () => void }) {
-  const [hovered, setHovered] = useState(false)
+  const [hovered, setHovered] = useState(false);
 
   return (
     <motion.button
@@ -581,68 +667,86 @@ function AddColumnButton({ onClick }: { onClick: () => void }) {
       onHoverEnd={() => setHovered(false)}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.97 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+      transition={{ type: "spring", stiffness: 400, damping: 26 }}
       className={cn(
-        'shrink-0 w-72 flex flex-col items-center justify-center gap-3 self-start',
-        'rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-        'transition-all',
+        "shrink-0 w-72 flex flex-col items-center justify-center gap-3 self-start",
+        "rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+        "transition-all",
       )}
       style={{
-        height: '120px',
+        height: "120px",
         background: hovered
-          ? 'linear-gradient(160deg, oklch(0.82 0.14 198 / 0.06) 0%, oklch(0.20 0.015 265 / 0.4) 100%)'
-          : 'rgba(255,255,255,0.025)',
+          ? "linear-gradient(160deg, oklch(0.82 0.14 198 / 0.06) 0%, oklch(0.20 0.015 265 / 0.4) 100%)"
+          : "rgba(255,255,255,0.025)",
         border: hovered
-          ? '1.5px dashed oklch(0.82 0.14 198 / 0.35)'
-          : '1.5px dashed rgba(255,255,255,0.09)',
+          ? "1.5px dashed oklch(0.82 0.14 198 / 0.35)"
+          : "1.5px dashed rgba(255,255,255,0.09)",
       }}
     >
       <motion.div
         animate={{ rotate: hovered ? 45 : 0, scale: hovered ? 1.15 : 1 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+        transition={{ type: "spring", stiffness: 400, damping: 22 }}
         className="w-10 h-10 rounded-2xl flex items-center justify-center"
         style={{
-          background: hovered ? 'oklch(0.82 0.14 198 / 0.12)' : 'rgba(255,255,255,0.05)',
-          border: hovered ? '1px solid oklch(0.82 0.14 198 / 0.25)' : '1px solid rgba(255,255,255,0.07)',
+          background: hovered
+            ? "oklch(0.82 0.14 198 / 0.12)"
+            : "rgba(255,255,255,0.05)",
+          border: hovered
+            ? "1px solid oklch(0.82 0.14 198 / 0.25)"
+            : "1px solid rgba(255,255,255,0.07)",
         }}
       >
         <Plus
           className="w-5 h-5 transition-colors"
-          style={{ color: hovered ? 'oklch(0.82 0.14 198)' : 'rgba(255,255,255,0.35)' }}
+          style={{
+            color: hovered ? "oklch(0.82 0.14 198)" : "rgba(255,255,255,0.35)",
+          }}
         />
       </motion.div>
       <span
         className="text-[11px] font-bold uppercase tracking-[0.12em] transition-colors"
-        style={{ color: hovered ? 'oklch(0.82 0.14 198)' : 'rgba(255,255,255,0.28)' }}
+        style={{
+          color: hovered ? "oklch(0.82 0.14 198)" : "rgba(255,255,255,0.28)",
+        }}
       >
         New Column
       </span>
     </motion.button>
-  )
+  );
 }
 
 // ── BoardPage ─────────────────────────────────────────────────────────────────
 
 export function BoardPage() {
-  const { workspaceId, boardId } = useParams<{ workspaceId: string; boardId: string }>()
-  const navigate = useNavigate()
-  const dispatch = useAppDispatch()
+  const { workspaceId, boardId } = useParams<{
+    workspaceId: string;
+    boardId: string;
+  }>();
+  const navigate = useNavigate();
+  const dispatch = useAppDispatch();
 
-  const { data: board, isLoading, isError } = useBoard(boardId)
-  const { mutate: moveCard } = useMoveCard(boardId ?? '')
+  const { data: board, isLoading, isError } = useBoard(boardId);
+  const { mutate: moveCard } = useMoveCard(boardId ?? "");
 
-  useBoardWebSocket(boardId)
+  useBoardWebSocket(boardId);
 
   // ── DnD state ─────────────────────────────────────────────────────────────
-  const [localColumns, setLocalColumns] = useState<ColumnWithCards[] | null>(null)
-  const [activeCard, setActiveCard] = useState<CardResponse | null>(null)
+  const [localColumns, setLocalColumns] = useState<ColumnWithCards[] | null>(
+    null,
+  );
+  const [activeCard, setActiveCard] = useState<CardResponse | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
-  const localColumnsRef = useRef<ColumnWithCards[] | null>(null)
-  const boardColumnsRef = useRef<ColumnWithCards[]>([])
+  const localColumnsRef = useRef<ColumnWithCards[] | null>(null);
+  const boardColumnsRef = useRef<ColumnWithCards[]>([]);
 
-  if (board) boardColumnsRef.current = board.columns
+  if (board) boardColumnsRef.current = board.columns;
 
-  const columns = localColumns ?? board?.columns ?? []
+  const columns = localColumns ?? board?.columns ?? [];
+
+  const currentUser = useAppSelector((s) => s.auth.user);
+  const memberRole =
+    board?.members.find((m) => m.user_id === currentUser?.id)?.role ?? "member";
 
   // ── Sensors ───────────────────────────────────────────────────────────────
   const sensors = useSensors(
@@ -652,148 +756,174 @@ export function BoardPage() {
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
-  )
+  );
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const card = boardColumnsRef.current
       .flatMap((col) => col.cards)
-      .find((c) => c.id === event.active.id)
+      .find((c) => c.id === event.active.id);
 
-    if (!card) return
+    if (!card) return;
 
-    setActiveCard(card)
-    const snapshot = boardColumnsRef.current.map((col) => ({ ...col, cards: [...col.cards] }))
-    setLocalColumns(snapshot)
-    localColumnsRef.current = snapshot
-  }, [])
+    setActiveCard(card);
+    const snapshot = boardColumnsRef.current.map((col) => ({
+      ...col,
+      cards: [...col.cards],
+    }));
+    setLocalColumns(snapshot);
+    localColumnsRef.current = snapshot;
+  }, []);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id || !localColumnsRef.current) return
+    const { active, over } = event;
+    if (!over || active.id === over.id || !localColumnsRef.current) return;
 
-    const activeCardId = active.id as string
-    const overId = over.id as string
+    const activeCardId = active.id as string;
+    const overId = over.id as string;
 
-    const prev = localColumnsRef.current
+    const prev = localColumnsRef.current;
 
-    const sourceCol = prev.find((col) => col.cards.some((c) => c.id === activeCardId))
+    const sourceCol = prev.find((col) =>
+      col.cards.some((c) => c.id === activeCardId),
+    );
     const targetCol =
       prev.find((col) => col.id === overId) ??
-      prev.find((col) => col.cards.some((c) => c.id === overId))
+      prev.find((col) => col.cards.some((c) => c.id === overId));
 
-    if (!sourceCol || !targetCol || sourceCol.id === targetCol.id) return
+    if (!sourceCol || !targetCol || sourceCol.id === targetCol.id) return;
 
-    const movingCard = sourceCol.cards.find((c) => c.id === activeCardId)!
-    const overCardIndex = targetCol.cards.findIndex((c) => c.id === overId)
-    const insertIndex = overCardIndex >= 0 ? overCardIndex : targetCol.cards.length
+    const movingCard = sourceCol.cards.find((c) => c.id === activeCardId)!;
+    const overCardIndex = targetCol.cards.findIndex((c) => c.id === overId);
+    const insertIndex =
+      overCardIndex >= 0 ? overCardIndex : targetCol.cards.length;
 
     const next = prev.map((col) => {
       if (col.id === sourceCol.id) {
-        return { ...col, cards: col.cards.filter((c) => c.id !== activeCardId) }
+        return {
+          ...col,
+          cards: col.cards.filter((c) => c.id !== activeCardId),
+        };
       }
       if (col.id === targetCol.id) {
-        const newCards = [...col.cards]
-        newCards.splice(insertIndex, 0, { ...movingCard, column_id: targetCol.id })
-        return { ...col, cards: newCards }
+        const newCards = [...col.cards];
+        newCards.splice(insertIndex, 0, {
+          ...movingCard,
+          column_id: targetCol.id,
+        });
+        return { ...col, cards: newCards };
       }
-      return col
-    })
+      return col;
+    });
 
-    localColumnsRef.current = next
-    setLocalColumns(next)
-  }, [])
+    localColumnsRef.current = next;
+    setLocalColumns(next);
+  }, []);
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveCard(null)
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      setActiveCard(null);
 
-    if (!over || !localColumnsRef.current) {
-      setLocalColumns(null)
-      localColumnsRef.current = null
-      return
-    }
-
-    const activeCardId = active.id as string
-    const overId = over.id as string
-    const cols = localColumnsRef.current
-
-    const targetCol =
-      cols.find((col) => col.id === overId) ??
-      cols.find((col) => col.cards.some((c) => c.id === overId))
-
-    if (!targetCol) {
-      setLocalColumns(null)
-      localColumnsRef.current = null
-      return
-    }
-
-    let targetCards = targetCol.cards
-
-    const sourceColBeforeDrag = boardColumnsRef.current.find((col) =>
-      col.cards.some((c) => c.id === activeCardId),
-    )
-    if (sourceColBeforeDrag?.id === targetCol.id) {
-      const oldIndex = sourceColBeforeDrag.cards.findIndex((c) => c.id === activeCardId)
-      const newIndex = targetCards.findIndex((c) => c.id === overId)
-      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        targetCards = arrayMove(targetCards, oldIndex, newIndex)
+      if (!over || !localColumnsRef.current) {
+        setLocalColumns(null);
+        localColumnsRef.current = null;
+        return;
       }
-    }
 
-    const droppedIndex = targetCards.findIndex((c) => c.id === activeCardId)
-    const prevCard = targetCards[droppedIndex - 1]
-    const nextCard = targetCards[droppedIndex + 1]
+      const activeCardId = active.id as string;
+      const overId = over.id as string;
+      const cols = localColumnsRef.current;
 
-    let newPosition: number
-    if (!prevCard && !nextCard) {
-      newPosition = 1000
-    } else if (!prevCard) {
-      newPosition = before(nextCard.position)
-    } else if (!nextCard) {
-      newPosition = after(prevCard.position)
-    } else {
-      newPosition = between(prevCard.position, nextCard.position)
-    }
+      const targetCol =
+        cols.find((col) => col.id === overId) ??
+        cols.find((col) => col.cards.some((c) => c.id === overId));
 
-    const sortedPositions = targetCards
-      .filter((c) => c.id !== activeCardId)
-      .map((c) => c.position)
-      .sort((a, b) => a - b)
+      if (!targetCol) {
+        setLocalColumns(null);
+        localColumnsRef.current = null;
+        return;
+      }
 
-    if (needsRebalance(sortedPositions)) {
-      const rebalanced = rebalance(targetCards.length)
-      targetCards.forEach((card, i) => {
-        if (card.id !== activeCardId) {
-          moveCard({ cardId: card.id, column_id: targetCol.id, position: rebalanced[i] })
+      let targetCards = targetCol.cards;
+
+      const sourceColBeforeDrag = boardColumnsRef.current.find((col) =>
+        col.cards.some((c) => c.id === activeCardId),
+      );
+      if (sourceColBeforeDrag?.id === targetCol.id) {
+        const oldIndex = sourceColBeforeDrag.cards.findIndex(
+          (c) => c.id === activeCardId,
+        );
+        const newIndex = targetCards.findIndex((c) => c.id === overId);
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          targetCards = arrayMove(targetCards, oldIndex, newIndex);
         }
-      })
-      newPosition = rebalanced[droppedIndex]
-    }
+      }
 
-    moveCard({ cardId: activeCardId, column_id: targetCol.id, position: newPosition })
+      const droppedIndex = targetCards.findIndex((c) => c.id === activeCardId);
+      const prevCard = targetCards[droppedIndex - 1];
+      const nextCard = targetCards[droppedIndex + 1];
 
-    setLocalColumns(null)
-    localColumnsRef.current = null
-  }, [moveCard])
+      let newPosition: number;
+      if (!prevCard && !nextCard) {
+        newPosition = 1000;
+      } else if (!prevCard) {
+        newPosition = before(nextCard.position);
+      } else if (!nextCard) {
+        newPosition = after(prevCard.position);
+      } else {
+        newPosition = between(prevCard.position, nextCard.position);
+      }
+
+      const sortedPositions = targetCards
+        .filter((c) => c.id !== activeCardId)
+        .map((c) => c.position)
+        .sort((a, b) => a - b);
+
+      if (needsRebalance(sortedPositions)) {
+        const rebalanced = rebalance(targetCards.length);
+        targetCards.forEach((card, i) => {
+          if (card.id !== activeCardId) {
+            moveCard({
+              cardId: card.id,
+              column_id: targetCol.id,
+              position: rebalanced[i],
+            });
+          }
+        });
+        newPosition = rebalanced[droppedIndex];
+      }
+
+      moveCard({
+        cardId: activeCardId,
+        column_id: targetCol.id,
+        position: newPosition,
+      });
+
+      setLocalColumns(null);
+      localColumnsRef.current = null;
+    },
+    [moveCard],
+  );
 
   const handleDragCancel = useCallback((_event: DragCancelEvent) => {
-    setActiveCard(null)
-    setLocalColumns(null)
-    localColumnsRef.current = null
-  }, [])
+    setActiveCard(null);
+    setLocalColumns(null);
+    localColumnsRef.current = null;
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center flex-col gap-4"
-        style={{ background: 'oklch(0.12 0.015 265)' }}
+      <div
+        className="flex h-screen items-center justify-center flex-col gap-4"
+        style={{ background: "oklch(0.12 0.015 265)" }}
       >
         <motion.div
           animate={{ rotate: 360 }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
         >
           <Loader2 className="w-7 h-7 text-primary" />
         </motion.div>
@@ -801,13 +931,14 @@ export function BoardPage() {
           Loading board…
         </p>
       </div>
-    )
+    );
   }
 
   if (isError || !board) {
     return (
-      <div className="flex h-screen items-center justify-center flex-col gap-4"
-        style={{ background: 'oklch(0.12 0.015 265)' }}
+      <div
+        className="flex h-screen items-center justify-center flex-col gap-4"
+        style={{ background: "oklch(0.12 0.015 265)" }}
       >
         <p className="text-on-surface-variant text-sm">
           Board not found or you don't have access.
@@ -819,20 +950,21 @@ export function BoardPage() {
           ← Back to boards
         </button>
       </div>
-    )
+    );
   }
 
   return (
     <div
       className="flex flex-col h-screen overflow-hidden"
-      style={{ background: 'oklch(0.12 0.015 265)' }}
+      style={{ background: "oklch(0.12 0.015 265)" }}
     >
       {/* Dot-grid background texture */}
       <div
         className="absolute inset-0 pointer-events-none z-0"
         style={{
-          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.028) 1px, transparent 1px)',
-          backgroundSize: '28px 28px',
+          backgroundImage:
+            "radial-gradient(circle, rgba(255,255,255,0.028) 1px, transparent 1px)",
+          backgroundSize: "28px 28px",
         }}
       />
 
@@ -840,15 +972,23 @@ export function BoardPage() {
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[180px] pointer-events-none z-0"
         style={{
-          background: 'radial-gradient(ellipse at top, oklch(0.82 0.14 198 / 0.06) 0%, transparent 70%)',
+          background:
+            "radial-gradient(ellipse at top, oklch(0.82 0.14 198 / 0.06) 0%, transparent 70%)",
         }}
       />
 
       <BoardTopbar
         board={board}
-        workspaceId={workspaceId ?? ''}
+        workspaceId={workspaceId ?? ""}
         onBack={() => navigate(`/${workspaceId}/boards`)}
-        onShareClick={() => {}}
+        onShareClick={() => setShareOpen(true)}
+      />
+      <ShareBoardDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        boardId={board.id}
+        boardTitle={board.title}
+        members={board.members}
       />
 
       <DndContext
@@ -871,8 +1011,12 @@ export function BoardPage() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95, y: 8 }}
                   transition={{
-                    layout: { type: 'spring', stiffness: 300, damping: 30 },
-                    default: { duration: 0.38, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] },
+                    layout: { type: "spring", stiffness: 300, damping: 30 },
+                    default: {
+                      duration: 0.38,
+                      delay: index * 0.06,
+                      ease: [0.22, 1, 0.36, 1],
+                    },
                   }}
                 >
                   <SortableContext
@@ -881,14 +1025,28 @@ export function BoardPage() {
                   >
                     <Column
                       column={column}
-                      boardId={boardId ?? ''}
+                      boardId={boardId ?? ""}
                       index={index}
-                      accentColor={COLUMN_ACCENT_COLORS[index % COLUMN_ACCENT_COLORS.length]}
+                      accentColor={
+                        COLUMN_ACCENT_COLORS[
+                          index % COLUMN_ACCENT_COLORS.length
+                        ]
+                      }
                       onAddCard={() =>
-                        dispatch(openModal({ type: 'createCard', columnId: column.id }))
+                        dispatch(
+                          openModal({
+                            type: "createCard",
+                            columnId: column.id,
+                          }),
+                        )
                       }
                       onAddColumn={() =>
-                        dispatch(openModal({ type: 'createColumn', boardId: boardId ?? '' }))
+                        dispatch(
+                          openModal({
+                            type: "createColumn",
+                            boardId: boardId ?? "",
+                          }),
+                        )
                       }
                     />
                   </SortableContext>
@@ -898,7 +1056,9 @@ export function BoardPage() {
 
             <AddColumnButton
               onClick={() =>
-                dispatch(openModal({ type: 'createColumn', boardId: boardId ?? '' }))
+                dispatch(
+                  openModal({ type: "createColumn", boardId: boardId ?? "" }),
+                )
               }
             />
           </div>
@@ -908,20 +1068,16 @@ export function BoardPage() {
         <DragOverlay
           dropAnimation={{
             duration: 200,
-            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
           }}
         >
           {activeCard ? (
-            <div style={{ width: '272px' }}>
-              <Card
-                card={activeCard}
-                boardId={boardId ?? ''}
-                isOverlay
-              />
+            <div style={{ width: "272px" }}>
+              <Card card={activeCard} boardId={boardId ?? ""} isOverlay />
             </div>
           ) : null}
         </DragOverlay>
       </DndContext>
     </div>
-  )
+  );
 }

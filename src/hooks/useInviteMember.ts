@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { workspaceQueryKey } from '@/hooks/useWorkspace'
@@ -39,6 +40,10 @@ export function useInviteMember(workspaceId: string) {
       queryClient.invalidateQueries({
         queryKey: workspaceQueryKey(workspaceId),
       })
+      toast.success('Member invited')
+    },
+    onError: () => {
+      toast.error('Failed to invite member')
     },
   })
 }

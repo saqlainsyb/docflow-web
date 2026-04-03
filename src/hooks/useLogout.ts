@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { useAppDispatch } from '@/store/hooks'
 import { clearCredentials } from '@/store'
@@ -12,7 +13,8 @@ import { clearCredentials } from '@/store'
 // 1. POST /auth/logout  → backend revokes the refresh token in the DB
 //                         and clears the HttpOnly cookie via Set-Cookie header
 // 2. clearCredentials   → wipes access token and user from Redux
-// 3. navigate('/login') → redirects the user
+// 3. toast.success      → shown before navigate so it persists on /login
+// 4. navigate('/login') → redirects the user
 //
 // Why server before client:
 // If we cleared Redux first and the POST failed (network hiccup), the user
@@ -40,6 +42,8 @@ export function useLogout() {
     } finally {
       // always clear client state — no matter what the server said
       dispatch(clearCredentials())
+      // toast before navigate so Sonner (mounted at app root) carries it to /login
+      toast.success('Signed out')
       navigate('/login', { replace: true })
     }
   }, [dispatch, navigate])

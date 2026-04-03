@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { workspaceQueryKey } from '@/hooks/useWorkspace'
@@ -43,6 +44,10 @@ export function useChangeMemberRole(workspaceId: string) {
       queryClient.invalidateQueries({
         queryKey: workspaceQueryKey(workspaceId),
       })
+      toast.success('Role updated')
+    },
+    onError: () => {
+      toast.error('Failed to update role')
     },
   })
 }

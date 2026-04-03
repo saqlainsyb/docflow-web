@@ -22,16 +22,19 @@
 //     4. Return the snapshot as context for onError.
 //
 //   onError:
-//     Restore the snapshot — silent rollback. The callsite (BoardPage)
-//     is responsible for showing any error feedback.
+//     Restore the snapshot — the card snaps back to where it was.
+//     Toast error so the user knows the move didn't save.
 //
 //   onSettled:
 //     Always invalidate to sync with true server state after resolution.
 //     After success this confirms our optimistic update matched reality.
 //     After error the snapshot already restored, but we still sync.
+//
+// No success toast — firing a toast on every drag-and-drop would be noisy.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { boardQueryKey } from '@/hooks/useBoard'
@@ -124,6 +127,7 @@ export function useMoveCard(boardId: string) {
       if (context?.previousBoard) {
         queryClient.setQueryData<BoardDetailResponse>(qKey, context.previousBoard)
       }
+      toast.error("Couldn't move card — changes reverted")
     },
 
     onSettled: () => {

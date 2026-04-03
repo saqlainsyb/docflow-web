@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
 import { boardQueryKey } from '@/hooks/useBoard'
@@ -43,6 +44,10 @@ export function useCreateCard(columnId: string, boardId: string) {
       queryClient.invalidateQueries({
         queryKey: boardQueryKey(boardId),
       })
+      toast.success('Card created')
+    },
+    onError: () => {
+      toast.error('Failed to create card')
     },
   })
 }

@@ -15,6 +15,7 @@ import { MembersPage } from "@/pages/workspace/MembersPage";
 import { SettingsPage } from "@/pages/workspace/SettingsPage";
 import { BoardPage } from "@/pages/workspace/BoardPage";
 import { DocumentEditorPage } from "@/pages/workspace/DocumentEditorPage";
+import { PublicBoardPage } from "@/pages/public/PublicBoardPage";
 
 // ── Placeholder pages (replaced one module at a time) ─────────────────────────
 // Inline until each module is built. Never import a page that doesn't exist yet.
@@ -22,12 +23,6 @@ import { DocumentEditorPage } from "@/pages/workspace/DocumentEditorPage";
 const LoadingScreen = () => (
   <div className="flex h-screen w-screen items-center justify-center bg-background">
     <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-foreground" />
-  </div>
-);
-
-const PublicBoardPage = () => (
-  <div className="p-8">
-    <p className="text-muted-foreground">Public board — coming soon</p>
   </div>
 );
 

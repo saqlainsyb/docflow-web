@@ -11,10 +11,16 @@
 // throughout the menu's open lifecycle.
 //
 // Also added: Rename column dialog + board-consistent styling on all dialogs.
+//
+// Column drag-to-reorder: the column root is now a sortable item via
+// useSortable. The GripVertical icon in the header acts as the drag handle —
+// listeners are scoped to it so card text inputs and buttons are not affected.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useRef } from 'react'
 import { useDroppable } from '@dnd-kit/core'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   MoreHorizontal, Plus, Trash2, Loader2, Layers, Pencil, GripVertical,
 } from 'lucide-react'
@@ -53,6 +59,10 @@ interface ColumnProps {
   onAddColumn: () => void
   index?: number
   accentColor?: AccentColor
+  // When true, the column is being rendered inside DragOverlay — skip
+  // useSortable transforms and droppable registration so there are no
+  // conflicting ref assignments on the same column ID.
+  isOverlay?: boolean
 }
 
 const DEFAULT_ACCENT: AccentColor = { dot: '#00DAF3', glow: 'rgba(0,218,243,0.18)' }
@@ -85,6 +95,10 @@ const DIALOG_CONTENT_STYLE = {
   borderRadius: '1.25rem',
 }
 
+// Suppress unused-variable warning — DIALOG_OVERLAY_STYLE is kept for
+// potential future use (matching BoardPage's pattern).
+void DIALOG_OVERLAY_STYLE
+
 // ── Column ────────────────────────────────────────────────────────────────────
 
 export function Column({
@@ -93,25 +107,61 @@ export function Column({
   onAddCard,
   index = 0,
   accentColor = DEFAULT_ACCENT,
+  isOverlay = false,
 }: ColumnProps) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [renameValue, setRenameValue] = useState(column.title)
   const [headerHovered, setHeaderHovered] = useState(false)
-  // Track if the dropdown itself is open so we keep the button visible
   const [menuOpen, setMenuOpen] = useState(false)
 
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   const { mutate: deleteColumn, isPending: isDeleting } = useDeleteColumn(boardId)
   const { mutate: renameColumn, isPending: isRenaming } = useRenameColumn(boardId)
-  const { isOver, setNodeRef: setDropRef } = useDroppable({ id: column.id })
+
+  // ── Sortable (column-level drag) ───────────────────────────────────────────
+  // We use a drag handle (GripVertical) so that interactions inside the column
+  // — clicking cards, typing in inputs — never accidentally start a column drag.
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setSortableRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: column.id,
+    // Tell dnd-kit this is a column, not a card. BoardPage's handlers use this
+    // to distinguish which drag type is active without inspecting IDs.
+    data: { type: 'column' },
+    disabled: isOverlay,
+  })
+
+  // ── Droppable (card drop target) ───────────────────────────────────────────
+  const { isOver, setNodeRef: setDropRef } = useDroppable({
+    id: column.id,
+    disabled: isOverlay,
+  })
+
+  // Merge sortable + droppable refs onto the same DOM node.
+  function setRef(el: HTMLDivElement | null) {
+    setSortableRef(el)
+    setDropRef(el)
+  }
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    // Dim the original column while it is being dragged — the DragOverlay
+    // ghost shows at full opacity in its place.
+    opacity: isDragging ? 0.4 : 1,
+  }
 
   const cardCount = column.cards.length
   const hasCards = cardCount > 0
   const { dot } = accentColor
 
-  // Button is visible when header is hovered OR menu is open
   const showMenuButton = headerHovered || menuOpen
 
   function handleDelete() {
@@ -133,16 +183,16 @@ export function Column({
   function openRename() {
     setRenameValue(column.title)
     setRenameOpen(true)
-    // Focus the input after the dialog opens
     setTimeout(() => renameInputRef.current?.select(), 80)
   }
 
   return (
     <>
       <div
-        ref={setDropRef}
+        ref={setRef}
         className="shrink-0 w-72 flex flex-col rounded-2xl relative"
         style={{
+          ...style,
           maxHeight: 'calc(100vh - 120px)',
           minHeight: '160px',
           background: isOver
@@ -173,6 +223,24 @@ export function Column({
           onMouseLeave={() => setHeaderHovered(false)}
         >
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            {/* ── Drag handle — ONLY this element starts a column drag ─────
+                Listeners are scoped here so clicks anywhere else in the
+                column (cards, buttons, inputs) are never swallowed by dnd. */}
+            <div
+              {...attributes}
+              {...listeners}
+              className="shrink-0 flex items-center justify-center w-4 h-4 rounded cursor-grab active:cursor-grabbing focus:outline-none"
+              style={{
+                opacity: showMenuButton ? 0.55 : 0.2,
+                transition: 'opacity 0.15s ease',
+                color: 'rgba(255,255,255,0.7)',
+                touchAction: 'none',
+              }}
+              aria-label={`Drag to reorder ${column.title}`}
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+
             {/* Accent dot */}
             <motion.div
               animate={{
@@ -227,7 +295,6 @@ export function Column({
               open={menuOpen}
               onOpenChange={(open) => {
                 setMenuOpen(open)
-                // When menu closes, also clear hover so button fades if cursor left
                 if (!open && !headerHovered) setHeaderHovered(false)
               }}
             >

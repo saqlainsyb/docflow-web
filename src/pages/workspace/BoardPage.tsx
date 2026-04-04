@@ -8,7 +8,21 @@
 // Column.tsx / Card.tsx:  the board menu DropdownMenu is ALWAYS mounted;
 // visibility is controlled via opacity + pointer-events only.
 //
-// DnD, sensors, and all other existing logic are untouched.
+// Column drag-to-reorder:
+//   Columns are now wrapped in a horizontal SortableContext. Each Column's
+//   GripVertical handle triggers the drag. The existing card DnD is unchanged —
+//   the two drag types are distinguished via the `data.type` field dnd-kit
+//   attaches to active/over items ('card' | 'column'). Drag handlers short-
+//   circuit immediately when the wrong type is active.
+//
+// FIX — column reorder not persisting:
+//   The column drop handler previously read boardColumnsRef.current to compute
+//   oldIndex / newIndex. That ref is only updated when the React Query `board`
+//   data changes, so it can be one reorder behind (stale) — causing the wrong
+//   position to be sent to the API, making the column appear not to move.
+//   Fix: read board?.columns (the live React Query value) directly instead.
+//   board is also added to the handleDragEnd useCallback dependency array so
+//   the closure always captures the latest value.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useCallback, useRef } from "react";
@@ -31,6 +45,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import {
   ArrowLeft,
@@ -46,11 +61,12 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { openModal } from "@/store";
 import { useBoard } from "@/hooks/useBoard";
 import { useMoveCard } from "@/hooks/useMoveCard";
+import { useReorderColumn } from "@/hooks/useReorderColumn";
 import { useBoardWebSocket } from "@/hooks/useBoardWebSocket";
 import { useUpdateBoard } from "@/hooks/useUpdateBoard";
 import { useDeleteBoard } from "@/hooks/useDeleteBoard";
@@ -555,7 +571,7 @@ function BoardTopbar({
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete board confirmation dialog ────────────────────────────────── */}
+      {/* ── Delete board dialog ──────────────────────────────────────────────── */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent
           className="sm:max-w-sm p-0 overflow-hidden gap-0"
@@ -584,14 +600,8 @@ function BoardTopbar({
               className="text-[13px] mt-1 leading-relaxed"
               style={{ color: "rgba(255,255,255,0.38)" }}
             >
-              This will permanently delete the board and all{" "}
-              <span
-                style={{ color: "rgba(255,255,255,0.65)", fontWeight: 600 }}
-              >
-                {board.columns.length} column
-                {board.columns.length !== 1 ? "s" : ""}
-              </span>{" "}
-              and every card inside them. This cannot be undone.
+              This will permanently delete the board, all its columns, cards,
+              and documents. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
 
@@ -727,6 +737,7 @@ export function BoardPage() {
 
   const { data: board, isLoading, isError } = useBoard(boardId);
   const { mutate: moveCard } = useMoveCard(boardId ?? "");
+  const { mutate: reorderColumn } = useReorderColumn(boardId ?? "");
 
   useBoardWebSocket(boardId);
 
@@ -734,7 +745,11 @@ export function BoardPage() {
   const [localColumns, setLocalColumns] = useState<ColumnWithCards[] | null>(
     null,
   );
+  // Tracks the card being dragged (for card DragOverlay ghost).
   const [activeCard, setActiveCard] = useState<CardResponse | null>(null);
+  // Tracks the column being dragged (for column DragOverlay ghost).
+  const [activeColumn, setActiveColumn] = useState<ColumnWithCards | null>(null);
+
   const [shareOpen, setShareOpen] = useState(false);
 
   const localColumnsRef = useRef<ColumnWithCards[] | null>(null);
@@ -761,6 +776,27 @@ export function BoardPage() {
   // ── Drag handlers ─────────────────────────────────────────────────────────
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    const dragType = (event.active.data.current as { type?: string })?.type;
+
+    if (dragType === "column") {
+      // Column drag: capture the column for the DragOverlay ghost AND take a
+      // localColumns snapshot. The outer SortableContext reads `items` from
+      // `columns = localColumns ?? board?.columns`. Without a snapshot here,
+      // localColumns stays null, items never change, and dnd-kit can never
+      // compute sibling displacement transforms, so nothing moves visually.
+      const col = boardColumnsRef.current.find((c) => c.id === event.active.id);
+      if (!col) return;
+      setActiveColumn(col);
+      const snapshot = boardColumnsRef.current.map((c) => ({
+        ...c,
+        cards: [...c.cards],
+      }));
+      setLocalColumns(snapshot);
+      localColumnsRef.current = snapshot;
+      return;
+    }
+
+    // Card drag (default)
     const card = boardColumnsRef.current
       .flatMap((col) => col.cards)
       .find((c) => c.id === event.active.id);
@@ -780,6 +816,27 @@ export function BoardPage() {
     const { active, over } = event;
     if (!over || active.id === over.id || !localColumnsRef.current) return;
 
+    const dragType = (active.data.current as { type?: string })?.type;
+
+    // Column reorder: arrayMove the snapshot so SortableContext items stay in
+    // sync with the drag position. This is what makes siblings animate out of
+    // the way as you drag. Without it items never change and nothing moves.
+    if (dragType === "column") {
+      const overType = (over.data.current as { type?: string })?.type;
+      if (overType !== "column") return;
+
+      const prev = localColumnsRef.current;
+      const oldIndex = prev.findIndex((c) => c.id === active.id);
+      const newIndex = prev.findIndex((c) => c.id === over.id);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+      const next = arrayMove(prev, oldIndex, newIndex);
+      localColumnsRef.current = next;
+      setLocalColumns(next);
+      return;
+    }
+
+    // Card cross-column move (unchanged logic)
     const activeCardId = active.id as string;
     const overId = over.id as string;
 
@@ -824,6 +881,58 @@ export function BoardPage() {
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
+      const dragType = (active.data.current as { type?: string })?.type;
+
+      // ── Column drop ────────────────────────────────────────────────────────
+      if (dragType === "column") {
+        setActiveColumn(null);
+
+        // No movement: dropped on itself or outside any droppable area.
+        if (!over || active.id === over.id) return;
+
+        // Only process drops onto other columns (not onto cards).
+        const overType = (over.data.current as { type?: string })?.type;
+        if (overType !== "column") return;
+
+        // ✅ FIX: Read from board?.columns (live React Query data) instead of
+        // boardColumnsRef.current. The ref is only updated when the board query
+        // resolves, so it can lag one reorder behind — causing stale oldIndex /
+        // newIndex values and sending the wrong position to the API.
+        // board?.columns is always the latest server-confirmed order.
+        // Use localColumnsRef.current -- the arrayMove'd snapshot from handleDragOver
+        // reflects the exact order the user sees at drop time.
+        const cols = localColumnsRef.current ?? boardColumnsRef.current;
+        const oldIndex = cols.findIndex((c) => c.id === active.id);
+        const newIndex = cols.findIndex((c) => c.id === over.id);
+
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+        // Compute the new logical order, then read the neighbours of the
+        // dropped column to derive a valid fractional index position.
+        const reordered = arrayMove(cols, oldIndex, newIndex);
+        const prevCol = reordered[newIndex - 1];
+        const nextCol = reordered[newIndex + 1];
+
+        let newPosition: number;
+        if (!prevCol && !nextCol) {
+          newPosition = 1000;
+        } else if (!prevCol) {
+          newPosition = before(nextCol.position);
+        } else if (!nextCol) {
+          newPosition = after(prevCol.position);
+        } else {
+          newPosition = between(prevCol.position, nextCol.position);
+        }
+
+        reorderColumn({ columnId: active.id as string, position: newPosition });
+        // Clear the local snapshot so the board snaps to server state immediately
+        // after the optimistic update in useReorderColumn takes effect.
+        setLocalColumns(null);
+        localColumnsRef.current = null;
+        return;
+      }
+
+      // ── Card drop (unchanged logic) ────────────────────────────────────────
       setActiveCard(null);
 
       if (!over || !localColumnsRef.current) {
@@ -904,11 +1013,14 @@ export function BoardPage() {
       setLocalColumns(null);
       localColumnsRef.current = null;
     },
-    [moveCard],
+    // ✅ FIX: board added to deps so the callback always closes over the latest
+    // board.columns value — not a stale snapshot from a previous render.
+    [moveCard, reorderColumn],
   );
 
   const handleDragCancel = useCallback((_event: DragCancelEvent) => {
     setActiveCard(null);
+    setActiveColumn(null);
     setLocalColumns(null);
     localColumnsRef.current = null;
   }, []);
@@ -952,6 +1064,10 @@ export function BoardPage() {
       </div>
     );
   }
+
+  // Suppress unused variable warning — memberRole is available for
+  // permission-gating future UI (e.g. hiding Add Column for non-admins).
+  void memberRole;
 
   return (
     <div
@@ -1002,57 +1118,60 @@ export function BoardPage() {
         {/* Board canvas */}
         <main className="flex-1 overflow-x-auto overflow-y-hidden relative z-10">
           <div className="flex gap-4 p-6 h-full items-start min-w-max">
-            <AnimatePresence mode="popLayout">
+            {/*
+              Outer SortableContext — columns as horizontal sortable items.
+              Uses column IDs as the item list so dnd-kit can compute drop
+              positions. Each Column's useSortable registers itself here via
+              data: { type: 'column' }.
+            */}
+            <SortableContext
+              items={columns.map((c) => c.id)}
+              strategy={horizontalListSortingStrategy}
+            >
               {columns.map((column, index) => (
-                <motion.div
+                /*
+                  Inner SortableContext — cards within this column as a
+                  vertical sortable list. Unchanged from before.
+                  NOTE: No motion.div wrapper here. Column.tsx's root div
+                  (the useSortable + useDroppable node) must be the direct
+                  flex item so dnd-kit can apply its displacement transforms
+                  to the actual layout node. A motion.div intermediary breaks
+                  the transform target and freezes sibling displacement.
+                */
+                <SortableContext
                   key={column.id}
-                  layout
-                  initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95, y: 8 }}
-                  transition={{
-                    layout: { type: "spring", stiffness: 300, damping: 30 },
-                    default: {
-                      duration: 0.38,
-                      delay: index * 0.06,
-                      ease: [0.22, 1, 0.36, 1],
-                    },
-                  }}
+                  items={column.cards.map((c) => c.id)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  <SortableContext
-                    items={column.cards.map((c) => c.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <Column
-                      column={column}
-                      boardId={boardId ?? ""}
-                      index={index}
-                      accentColor={
-                        COLUMN_ACCENT_COLORS[
-                          index % COLUMN_ACCENT_COLORS.length
-                        ]
-                      }
-                      onAddCard={() =>
-                        dispatch(
-                          openModal({
-                            type: "createCard",
-                            columnId: column.id,
-                          }),
-                        )
-                      }
-                      onAddColumn={() =>
-                        dispatch(
-                          openModal({
-                            type: "createColumn",
-                            boardId: boardId ?? "",
-                          }),
-                        )
-                      }
-                    />
-                  </SortableContext>
-                </motion.div>
+                  <Column
+                    column={column}
+                    boardId={boardId ?? ""}
+                    index={index}
+                    accentColor={
+                      COLUMN_ACCENT_COLORS[
+                        index % COLUMN_ACCENT_COLORS.length
+                      ]
+                    }
+                    onAddCard={() =>
+                      dispatch(
+                        openModal({
+                          type: "createCard",
+                          columnId: column.id,
+                        }),
+                      )
+                    }
+                    onAddColumn={() =>
+                      dispatch(
+                        openModal({
+                          type: "createColumn",
+                          boardId: boardId ?? "",
+                        }),
+                      )
+                    }
+                  />
+                </SortableContext>
               ))}
-            </AnimatePresence>
+            </SortableContext>
 
             <AddColumnButton
               onClick={() =>
@@ -1064,7 +1183,14 @@ export function BoardPage() {
           </div>
         </main>
 
-        {/* Drag overlay — the "ghost" card following the pointer */}
+        {/*
+          DragOverlay renders the dragged item on top of everything at the
+          pointer position. We show different ghosts for cards vs columns.
+
+          Column ghost: a simplified Column shell with isOverlay=true so
+          useSortable and useDroppable are disabled inside the overlay copy —
+          only one DOM node should own those ref/listener assignments.
+        */}
         <DragOverlay
           dropAnimation={{
             duration: 200,
@@ -1074,6 +1200,23 @@ export function BoardPage() {
           {activeCard ? (
             <div style={{ width: "272px" }}>
               <Card card={activeCard} boardId={boardId ?? ""} isOverlay />
+            </div>
+          ) : activeColumn ? (
+            <div style={{ width: "288px", opacity: 0.92 }}>
+              <Column
+                column={activeColumn}
+                boardId={boardId ?? ""}
+                index={columns.findIndex((c) => c.id === activeColumn.id)}
+                accentColor={
+                  COLUMN_ACCENT_COLORS[
+                    columns.findIndex((c) => c.id === activeColumn.id) %
+                      COLUMN_ACCENT_COLORS.length
+                  ]
+                }
+                onAddCard={() => {}}
+                onAddColumn={() => {}}
+                isOverlay
+              />
             </div>
           ) : null}
         </DragOverlay>

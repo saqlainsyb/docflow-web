@@ -10,17 +10,17 @@
 export const ROUTES = {
   // ── Auth ──────────────────────────────────────────────────────────────────
   auth: {
-    register:        '/auth/register',
-    login:           '/auth/login',
-    refresh:         '/auth/refresh',
-    logout:          '/auth/logout',
+    register: '/auth/register',
+    login:    '/auth/login',
+    refresh:  '/auth/refresh',
+    logout:   '/auth/logout',
   },
-
+ 
   // ── Users ─────────────────────────────────────────────────────────────────
   users: {
-    me:              '/users/me',
+    me: '/users/me',
   },
-
+ 
   // ── Workspaces ────────────────────────────────────────────────────────────
   workspaces: {
     list:                                    '/workspaces',
@@ -32,43 +32,44 @@ export const ROUTES = {
     member:   (id: string, uid: string) =>  `/workspaces/${id}/members/${uid}`,
     boards:   (id: string) =>               `/workspaces/${id}/boards`,
   },
-
+ 
   // ── Boards ────────────────────────────────────────────────────────────────
   boards: {
-    create:     (workspaceId: string) =>    `/workspaces/${workspaceId}/boards`,
-    detail:     (id: string) =>             `/boards/${id}`,
-    update:     (id: string) =>             `/boards/${id}`,
-    delete:     (id: string) =>             `/boards/${id}`,
-    members:    (id: string) =>             `/boards/${id}/members`,
-    member:     (id: string, uid: string) => `/boards/${id}/members/${uid}`,
-    shareLink:  (id: string) =>             `/boards/${id}/share-link`,
+    create:    (workspaceId: string) =>           `/workspaces/${workspaceId}/boards`,
+    detail:    (id: string) =>                    `/boards/${id}`,
+    update:    (id: string) =>                    `/boards/${id}`,
+    delete:    (id: string) =>                    `/boards/${id}`,
+    members:   (id: string) =>                    `/boards/${id}/members`,
+    member:    (id: string, uid: string) =>       `/boards/${id}/members/${uid}`,
+    transfer:  (id: string) =>                    `/boards/${id}/transfer`,
+    shareLink: (id: string) =>                    `/boards/${id}/share-link`,
   },
-
+ 
   // ── Public ────────────────────────────────────────────────────────────────
   share: {
-    view: (token: string) =>                `/share/${token}`,
+    view: (token: string) => `/share/${token}`,
   },
-
+ 
   // ── Columns ───────────────────────────────────────────────────────────────
   columns: {
-    create:  (boardId: string) =>           `/boards/${boardId}/columns`,
-    update:  (id: string) =>                `/columns/${id}`,
-    delete:  (id: string) =>                `/columns/${id}`,
+    create: (boardId: string) => `/boards/${boardId}/columns`,
+    update: (id: string) =>      `/columns/${id}`,
+    delete: (id: string) =>      `/columns/${id}`,
   },
-
+ 
   // ── Cards ─────────────────────────────────────────────────────────────────
   cards: {
-    create:    (columnId: string) =>        `/columns/${columnId}/cards`,
-    update:    (id: string) =>              `/cards/${id}`,
-    delete:    (id: string) =>              `/cards/${id}`,
-    move:      (id: string) =>              `/cards/${id}/move`,
-    archive:   (id: string) =>              `/cards/${id}/archive`,
-    unarchive: (id: string) =>              `/cards/${id}/unarchive`,
+    create:    (columnId: string) => `/columns/${columnId}/cards`,
+    update:    (id: string) =>       `/cards/${id}`,
+    delete:    (id: string) =>       `/cards/${id}`,
+    move:      (id: string) =>       `/cards/${id}/move`,
+    archive:   (id: string) =>       `/cards/${id}/archive`,
+    unarchive: (id: string) =>       `/cards/${id}/unarchive`,
   },
-
+ 
   // ── Documents ─────────────────────────────────────────────────────────────
   documents: {
-    token:    (id: string) =>               `/documents/${id}/token`,
-    snapshot: (id: string) =>               `/documents/${id}/snapshot`,
+    token:    (id: string) => `/documents/${id}/token`,
+    snapshot: (id: string) => `/documents/${id}/snapshot`,
   },
 } as const

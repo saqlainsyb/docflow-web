@@ -2,13 +2,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Dialog for generating and revoking a board's public share link.
 //
-// Role gating is derived INTERNALLY by matching the logged-in user's ID
-// against board.members — the same pattern used in WorkspacePage and
-// other member-aware components. The caller does NOT pass canManage; it
-// only passes boardId, boardTitle, and the board's members array.
+// canManage is derived from my_board_role (from BoardDetailResponse),
+// passed directly by the caller. This is simpler and more reliable than
+// searching the members array — the backend already resolved the effective
+// board role server-side.
 //
-// This avoids the bug where the caller computes memberRole incorrectly
-// (e.g. undefined from a failed .find()) and always ends up with canManage=false.
+// board owner + admin → can manage share link
+// editor             → read-only view of the dialog (no actions)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useCallback } from 'react'
@@ -31,12 +31,11 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { useAppSelector } from '@/store/hooks'
 import { useGenerateShareLink } from '@/hooks/useGenerateShareLink'
 import { useRevokeShareLink } from '@/hooks/useRevokeShareLink'
-import type { MemberResponse } from '@/lib/types'
+import type { BoardRole } from '@/lib/types'
 
-// ── Design tokens (mirrors BoardPage.tsx) ─────────────────────────────────────
+// ── Design tokens ─────────────────────────────────────────────────────────────
 
 const DIALOG_CONTENT_STYLE = {
   background:
@@ -58,7 +57,6 @@ function CopyField({ url }: { url: string }) {
     try {
       await navigator.clipboard.writeText(url)
     } catch {
-      // Fallback for browsers blocking clipboard without a user gesture
       const el = document.createElement('textarea')
       el.value = url
       el.style.cssText = 'position:fixed;opacity:0'
@@ -142,9 +140,9 @@ interface ShareBoardDialogProps {
   onOpenChange: (open: boolean) => void
   boardId: string
   boardTitle: string
-  /** Full members list from BoardDetailResponse — used to derive the current
-   *  user's role without the caller having to compute it. */
-  members: MemberResponse[]
+  // The caller's resolved board role from BoardDetailResponse.my_board_role.
+  // Passed directly — do NOT re-derive from members array.
+  myBoardRole: BoardRole | string
 }
 
 export function ShareBoardDialog({
@@ -152,16 +150,11 @@ export function ShareBoardDialog({
   onOpenChange,
   boardId,
   boardTitle,
-  members,
+  myBoardRole,
 }: ShareBoardDialogProps) {
-  // ── Derive canManage internally ───────────────────────────────────────────
-  // Match the logged-in user's id against board.members to get their role.
-  // Workspace owners and admins always have manage rights; plain members don't.
-  const currentUser = useAppSelector((state) => state.auth.user)
-  const myRole = members.find((m) => m.user_id === currentUser?.id)?.role
-  const canManage = myRole === 'admin' || myRole === 'owner'
+  // board owner + admin can manage the share link
+  const canManage = myBoardRole === 'owner' || myBoardRole === 'admin'
 
-  // ── Local state ───────────────────────────────────────────────────────────
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
 
@@ -187,8 +180,6 @@ export function ShareBoardDialog({
     if (!next) setConfirmRevoke(false)
     onOpenChange(next)
   }
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -229,7 +220,6 @@ export function ShareBoardDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Divider */}
         <div
           className="h-px mx-6 mt-5"
           style={{ background: 'rgba(255,255,255,0.06)' }}
@@ -246,7 +236,7 @@ export function ShareBoardDialog({
             account required. They cannot make any changes.
           </p>
 
-          {/* Members-only notice */}
+          {/* Editor notice */}
           {!canManage && (
             <motion.div
               initial={{ opacity: 0, y: 4 }}
@@ -267,15 +257,13 @@ export function ShareBoardDialog({
             </motion.div>
           )}
 
-          {/* Copy field — shown after a successful generate */}
           <AnimatePresence>
             {shareUrl && <CopyField url={shareUrl} />}
           </AnimatePresence>
 
-          {/* Admin/owner actions */}
+          {/* Owner / admin actions */}
           {canManage && (
             <div className="space-y-2.5">
-              {/* Generate / Regenerate */}
               <motion.button
                 onClick={handleGenerate}
                 disabled={isGenerating || isRevoking}
@@ -305,7 +293,6 @@ export function ShareBoardDialog({
                 {shareUrl ? 'Regenerate link' : 'Generate link'}
               </motion.button>
 
-              {/* Revoke — only visible once a link has been generated */}
               <AnimatePresence>
                 {shareUrl && (
                   <motion.div
@@ -359,7 +346,7 @@ export function ShareBoardDialog({
                         <div className="flex gap-2">
                           <button
                             onClick={() => setConfirmRevoke(false)}
-                            className="flex-1 py-2 rounded-lg text-[12px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                            className="flex-1 py-2 rounded-lg text-[12px] font-semibold focus:outline-none"
                             style={{
                               background: 'rgba(255,255,255,0.05)',
                               border: '1px solid rgba(255,255,255,0.09)',
@@ -372,7 +359,7 @@ export function ShareBoardDialog({
                             onClick={handleRevoke}
                             disabled={isRevoking}
                             whileTap={{ scale: 0.97 }}
-                            className="flex-1 py-2 rounded-lg text-[12px] font-bold flex items-center justify-center gap-1.5 transition-opacity disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                            className="flex-1 py-2 rounded-lg text-[12px] font-bold flex items-center justify-center gap-1.5 transition-opacity disabled:opacity-60 focus:outline-none"
                             style={{
                               background: 'rgba(239,68,68,0.18)',
                               border: '1px solid rgba(239,68,68,0.30)',

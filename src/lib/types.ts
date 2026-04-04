@@ -3,13 +3,6 @@
 // All API-shaped types for Docflow.
 // These mirror the backend DTOs exactly — if the backend changes a field,
 // change it here first and TypeScript will surface every broken callsite.
-//
-// Rules:
-// - No Zod here. Zod schemas live in validations.ts (form concerns).
-// - No Redux here. Store types import FROM here, not the other way around.
-// - Nullable fields use `string | null`, not `string | undefined` —
-//   the backend sends explicit nulls, not missing keys.
-// - All timestamps are ISO 8601 strings (Go's time.Time JSON encoding).
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -61,6 +54,21 @@ export interface WorkspaceDetail {
 
 export type BoardVisibility = 'workspace' | 'private'
 
+// Board-level roles — completely independent from workspace roles.
+// A workspace `member` can be a board `owner`.
+export type BoardRole = 'owner' | 'admin' | 'editor'
+
+// Board member — uses board_role (not workspace role).
+// Returned by GET /boards/:id and GET /boards/:id/members.
+export interface BoardMember {
+  user_id: string
+  name: string
+  email: string
+  avatar_url: string | null
+  board_role: BoardRole
+  added_at: string
+}
+
 // The 6-color palette enforced at DB level (cards.color constraint)
 export type CardColor =
   | '#EF4444'
@@ -91,8 +99,6 @@ export interface ColumnWithCards {
 }
 
 // Response from POST /workspaces/:id/boards
-// The backend returns the raw Board model (no json tags) so field names
-// are Go's default: PascalCase. ID → "ID", WorkspaceID → "WorkspaceID" etc.
 export interface BoardCreateResponse {
   ID: string
   WorkspaceID: string
@@ -107,20 +113,24 @@ export interface BoardListItem {
   workspace_id: string
   title: string
   visibility: BoardVisibility
-  member_count: number  // added: backend sends this in BoardResponse
-  card_count: number    // added: backend sends this in BoardResponse
+  member_count: number
+  card_count: number
   created_at: string
-  updated_at: string    // note: backend Board model has UpdatedAt
+  updated_at: string
 }
 
 export interface BoardDetailResponse {
   id: string
-  workspace_id: string      // added: backend sends this
+  workspace_id: string
   title: string
   visibility: BoardVisibility
-  is_public_view: boolean   // added: backend sends this
+  is_public_view: boolean
+  // The calling user's resolved board role.
+  // Use this to gate UI controls — do NOT re-derive from members array.
+  my_board_role: BoardRole
   columns: ColumnWithCards[]
-  members: MemberResponse[]
+  // Board members with their board-level roles (not workspace roles).
+  members: BoardMember[]
   created_at: string
 }
 
@@ -128,11 +138,27 @@ export interface ShareLinkResponse {
   url: string
 }
 
+// ── Board member request DTOs ─────────────────────────────────────────────────
+
+export interface AddBoardMemberRequest {
+  user_id: string
+  role?: 'admin' | 'editor' // defaults to 'editor' on the backend
+}
+
+export interface UpdateBoardMemberRoleRequest {
+  role: 'admin' | 'editor'
+  // 'owner' is excluded — use the transfer-ownership endpoint instead
+}
+
+export interface TransferOwnershipRequest {
+  user_id: string
+}
+
 // ── Columns ───────────────────────────────────────────────────────────────────
 
 export interface ColumnResponse {
   id: string
-  board_id: string    // added: backend sends this in ColumnResponse
+  board_id: string
   title: string
   position: number
   created_at: string
@@ -161,23 +187,19 @@ export interface DocumentSnapshotResponse {
 }
 
 // ── Board WebSocket Events ────────────────────────────────────────────────────
-// Received over /ws/boards/:boardId — JSON, not Yjs binary.
-// Discriminated union on `type` so a switch statement is exhaustive.
 
 export type BoardWSEvent =
-  | { type: 'CARD_CREATED';    card: CardResponse }
-  | { type: 'CARD_UPDATED';    card_id: string; changes: Partial<CardResponse> }
-  | { type: 'CARD_MOVED';      card_id: string; column_id: string; position: number }
-  | { type: 'CARD_ARCHIVED';   card_id: string }
-  | { type: 'CARD_DELETED';    card_id: string }
-  | { type: 'COLUMN_CREATED';  column: ColumnResponse }
-  | { type: 'COLUMN_RENAMED';  column_id: string; title: string }
+  | { type: 'CARD_CREATED';     card: CardResponse }
+  | { type: 'CARD_UPDATED';     card_id: string; changes: Partial<CardResponse> }
+  | { type: 'CARD_MOVED';       card_id: string; column_id: string; position: number }
+  | { type: 'CARD_ARCHIVED';    card_id: string }
+  | { type: 'CARD_DELETED';     card_id: string }
+  | { type: 'COLUMN_CREATED';   column: ColumnResponse }
+  | { type: 'COLUMN_RENAMED';   column_id: string; title: string }
   | { type: 'COLUMN_REORDERED'; column_id: string; position: number }
-  | { type: 'COLUMN_DELETED';  column_id: string }
+  | { type: 'COLUMN_DELETED';   column_id: string }
 
 // ── API Error ─────────────────────────────────────────────────────────────────
-// Every error from every endpoint follows this exact shape.
-// Used for typed error handling in hooks.
 
 export type ApiErrorCode =
   | 'MISSING_TOKEN'
@@ -200,6 +222,9 @@ export type ApiErrorCode =
   | 'SHARE_TOKEN_NOT_FOUND'
   | 'EMAIL_ALREADY_EXISTS'
   | 'ALREADY_WORKSPACE_MEMBER'
+  | 'ALREADY_BOARD_MEMBER'
+  | 'CANNOT_REMOVE_BOARD_OWNER'
+  | 'TARGET_NOT_BOARD_MEMBER'
   | 'RATE_LIMITED'
   | 'INTERNAL_ERROR'
 

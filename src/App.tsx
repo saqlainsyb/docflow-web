@@ -16,6 +16,7 @@ import { SettingsPage } from "@/pages/workspace/SettingsPage";
 import { BoardPage } from "@/pages/workspace/BoardPage";
 import { DocumentEditorPage } from "@/pages/workspace/DocumentEditorPage";
 import { PublicBoardPage } from "@/pages/public/PublicBoardPage";
+import { ProfilePage } from "@/pages/profile/ProfilePage";
 
 // ── Placeholder pages (replaced one module at a time) ─────────────────────────
 // Inline until each module is built. Never import a page that doesn't exist yet.
@@ -154,12 +155,16 @@ export default function App() {
         {/* Board view — full screen, no sidebar                           */}
         <Route path="/:workspaceId/boards/:boardId" element={<BoardPage />} />
 
-        {/* Document editor — full screen, no sidebar (Module 7)          */}
+        {/* Document editor — full screen, no sidebar                      */}
         {/* Navigated to when a card is clicked on the board view         */}
         <Route
           path="/:workspaceId/boards/:boardId/cards/:cardId"
           element={<DocumentEditorPage />}
         />
+
+        {/* Profile — full screen, no sidebar, no workspaceId in URL      */}
+        {/* Navigated to from UserMenu → "Profile" item                   */}
+        <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
       {/* ── 404 ─────────────────────────────────────────────────────────── */}

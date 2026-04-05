@@ -97,6 +97,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ShareBoardDialog } from "@/components/board/ShareBoardDialog";
+import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
@@ -138,6 +139,7 @@ interface BoardTopbarProps {
   workspaceId: string;
   onBack: () => void;
   onShareClick: () => void;
+  onMembersClick: () => void;
 }
 
 function BoardTopbar({
@@ -145,6 +147,7 @@ function BoardTopbar({
   workspaceId,
   onBack,
   onShareClick,
+  onMembersClick,
 }: BoardTopbarProps) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -350,6 +353,27 @@ function BoardTopbar({
           )}
 
           <div className="w-px h-5 bg-white/8" />
+
+          {/* Members — visible to all board accessors */}
+          <motion.button
+            onClick={onMembersClick}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 450, damping: 25 }}
+            className={cn(
+              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+              "transition-colors",
+            )}
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.09)",
+              color: "rgba(255,255,255,0.55)",
+            }}
+          >
+            <Users className="w-3.5 h-3.5" />
+            Members
+          </motion.button>
 
           {/* Share — only visible to owner + admin */}
           {perms.canManageShareLink && (
@@ -759,6 +783,7 @@ export function BoardPage() {
   const [activeCard, setActiveCard] = useState<CardResponse | null>(null);
   const [activeColumn, setActiveColumn] = useState<ColumnWithCards | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   const localColumnsRef = useRef<ColumnWithCards[] | null>(null);
   const boardColumnsRef = useRef<ColumnWithCards[]>([]);
@@ -999,6 +1024,7 @@ export function BoardPage() {
         workspaceId={workspaceId ?? ""}
         onBack={() => navigate(`/${workspaceId}/boards`)}
         onShareClick={() => setShareOpen(true)}
+        onMembersClick={() => setMembersOpen(true)}
       />
 
       {/* ShareBoardDialog — receives my_board_role directly */}
@@ -1007,6 +1033,17 @@ export function BoardPage() {
         onOpenChange={setShareOpen}
         boardId={board.id}
         boardTitle={board.title}
+        myBoardRole={board.my_board_role}
+      />
+
+      {/* BoardMembersDialog */}
+      <BoardMembersDialog
+        open={membersOpen}
+        onOpenChange={setMembersOpen}
+        boardId={board.id}
+        boardTitle={board.title}
+        workspaceId={board.workspace_id}
+        members={board.members}
         myBoardRole={board.my_board_role}
       />
 

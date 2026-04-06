@@ -53,6 +53,9 @@ import {
   Trash2,
   ShieldCheck,
   Eye,
+  ArchiveIcon,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useAppDispatch } from "@/store/hooks";
@@ -98,6 +101,7 @@ import {
 } from "@/components/ui/dialog";
 import { ShareBoardDialog } from "@/components/board/ShareBoardDialog";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
+import { ArchivedCardsDrawer } from "@/components/board/ArchivedCardsDrawer";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
@@ -120,16 +124,16 @@ const DIALOG_CONTENT_STYLE = {
 
 // Board role → readable label for tooltips
 function boardRoleLabel(role: string): string {
-  if (role === "owner") return "Owner"
-  if (role === "admin") return "Admin"
-  return "Editor"
+  if (role === "owner") return "Owner";
+  if (role === "admin") return "Admin";
+  return "Editor";
 }
 
 // Board role → icon for tooltips
 function BoardRoleIcon({ role }: { role: string }) {
-  if (role === "owner") return <ShieldCheck className="w-2.5 h-2.5" />
-  if (role === "admin") return <ShieldCheck className="w-2.5 h-2.5" />
-  return <Eye className="w-2.5 h-2.5" />
+  if (role === "owner") return <ShieldCheck className="w-2.5 h-2.5" />;
+  if (role === "admin") return <ShieldCheck className="w-2.5 h-2.5" />;
+  return <Eye className="w-2.5 h-2.5" />;
 }
 
 // ── BoardTopbar ───────────────────────────────────────────────────────────────
@@ -140,6 +144,8 @@ interface BoardTopbarProps {
   onBack: () => void;
   onShareClick: () => void;
   onMembersClick: () => void;
+  onArchiveClick: () => void;
+  archivedCount?: number;
 }
 
 function BoardTopbar({
@@ -148,6 +154,8 @@ function BoardTopbar({
   onBack,
   onShareClick,
   onMembersClick,
+  onArchiveClick,
+  archivedCount,
 }: BoardTopbarProps) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -156,20 +164,29 @@ function BoardTopbar({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const { mutate: updateBoard, isPending: isRenaming } = useUpdateBoard(board.id);
-  const { mutate: deleteBoard, isPending: isDeleting } = useDeleteBoard(board.id, workspaceId);
+  const { mutate: updateBoard, isPending: isRenaming } = useUpdateBoard(
+    board.id,
+  );
+  const { mutate: deleteBoard, isPending: isDeleting } = useDeleteBoard(
+    board.id,
+    workspaceId,
+  );
 
   // ── Permissions — derived from the backend-resolved board role ────────────
   const perms = useBoardPermissions(board.my_board_role);
 
   const visibleMembers = board.members.slice(0, 4);
   const overflowCount = board.members.length - visibleMembers.length;
-  const totalCards = board.columns.reduce((acc, col) => acc + col.cards.length, 0);
+  const totalCards = board.columns.reduce(
+    (acc, col) => acc + col.cards.length,
+    0,
+  );
   const isPublic = board.visibility === "workspace";
 
   // If the current user has no permissions at all (shouldn't happen — you need
   // board access to even load the page), hide the menu entirely.
-  const hasAnyMenuItems = perms.canRename || perms.canChangeVisibility || perms.canDelete;
+  const hasAnyMenuItems =
+    perms.canRename || perms.canChangeVisibility || perms.canDelete;
 
   function openRename() {
     setRenameValue(board.title);
@@ -351,9 +368,41 @@ function BoardTopbar({
               </span>
             </div>
           )}
-
           <div className="w-px h-5 bg-white/8" />
-
+          {/* Archive — visible to all board accessors */}
+          <motion.button
+            onClick={onArchiveClick}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 450, damping: 25 }}
+            className={cn(
+              "relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+              "transition-colors",
+            )}
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.09)",
+              color: "rgba(255,255,255,0.55)",
+            }}
+          >
+            <ArchiveRestore className="w-3.5 h-3.5" />
+            Archive
+            {/* Count badge — only shown when there are archived cards */}
+            {archivedCount !== undefined && archivedCount > 0 && (
+              <span
+                className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1
+                      rounded-full text-[10px] font-bold flex items-center justify-center"
+                style={{
+                  background: "oklch(0.42 0.09 198)",
+                  color: "oklch(0.91 0.015 265)",
+                  border: "1.5px solid oklch(0.155 0.016 265)",
+                }}
+              >
+                {archivedCount > 99 ? "99+" : archivedCount}
+              </span>
+            )}
+          </motion.button>
           {/* Members — visible to all board accessors */}
           <motion.button
             onClick={onMembersClick}
@@ -374,7 +423,6 @@ function BoardTopbar({
             <Users className="w-3.5 h-3.5" />
             Members
           </motion.button>
-
           {/* Share — only visible to owner + admin */}
           {perms.canManageShareLink && (
             <motion.button
@@ -398,7 +446,6 @@ function BoardTopbar({
               Share
             </motion.button>
           )}
-
           {/* Board ⋯ menu — only rendered when the user has at least one action */}
           {hasAnyMenuItems && (
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -450,7 +497,10 @@ function BoardTopbar({
                   Board settings
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator
-                  style={{ background: "rgba(255,255,255,0.06)", margin: "4px 0" }}
+                  style={{
+                    background: "rgba(255,255,255,0.06)",
+                    margin: "4px 0",
+                  }}
                 />
 
                 {/* Rename — owner + admin */}
@@ -480,7 +530,9 @@ function BoardTopbar({
                       setMenuOpen(false);
                       updateBoard({
                         visibility:
-                          board.visibility === "workspace" ? "private" : "workspace",
+                          board.visibility === "workspace"
+                            ? "private"
+                            : "workspace",
                       });
                     }}
                     className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
@@ -499,7 +551,8 @@ function BoardTopbar({
                         <Globe className="w-3.5 h-3.5" />
                       )}
                     </div>
-                    Make {board.visibility === "workspace" ? "private" : "workspace"}
+                    Make{" "}
+                    {board.visibility === "workspace" ? "private" : "workspace"}
                   </DropdownMenuItem>
                 )}
 
@@ -507,7 +560,10 @@ function BoardTopbar({
                 {perms.canDelete && (
                   <>
                     <DropdownMenuSeparator
-                      style={{ background: "rgba(255,255,255,0.06)", margin: "4px 0" }}
+                      style={{
+                        background: "rgba(255,255,255,0.06)",
+                        margin: "4px 0",
+                      }}
                     />
                     <DropdownMenuItem
                       onClick={() => {
@@ -579,8 +635,10 @@ function BoardTopbar({
                 color: "oklch(0.91 0.015 265)",
               }}
               onFocus={(e) => {
-                e.currentTarget.style.borderColor = "oklch(0.82 0.14 198 / 0.45)";
-                e.currentTarget.style.boxShadow = "0 0 0 3px oklch(0.82 0.14 198 / 0.10)";
+                e.currentTarget.style.borderColor =
+                  "oklch(0.82 0.14 198 / 0.45)";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 3px oklch(0.82 0.14 198 / 0.10)";
               }}
               onBlur={(e) => {
                 e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
@@ -604,7 +662,11 @@ function BoardTopbar({
             </button>
             <button
               onClick={handleRename}
-              disabled={isRenaming || !renameValue.trim() || renameValue.trim() === board.title}
+              disabled={
+                isRenaming ||
+                !renameValue.trim() ||
+                renameValue.trim() === board.title
+              }
               className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all focus:outline-none disabled:opacity-40"
               style={{
                 background:
@@ -734,7 +796,9 @@ function AddColumnButton({ onClick }: { onClick: () => void }) {
         transition={{ type: "spring", stiffness: 400, damping: 22 }}
         className="w-10 h-10 rounded-2xl flex items-center justify-center"
         style={{
-          background: hovered ? "oklch(0.82 0.14 198 / 0.12)" : "rgba(255,255,255,0.05)",
+          background: hovered
+            ? "oklch(0.82 0.14 198 / 0.12)"
+            : "rgba(255,255,255,0.05)",
           border: hovered
             ? "1px solid oklch(0.82 0.14 198 / 0.25)"
             : "1px solid rgba(255,255,255,0.07)",
@@ -779,12 +843,16 @@ export function BoardPage() {
   const perms = useBoardPermissions(board?.my_board_role);
 
   // ── DnD state ──────────────────────────────────────────────────────────────
-  const [localColumns, setLocalColumns] = useState<ColumnWithCards[] | null>(null);
+  const [localColumns, setLocalColumns] = useState<ColumnWithCards[] | null>(
+    null,
+  );
   const [activeCard, setActiveCard] = useState<CardResponse | null>(null);
-  const [activeColumn, setActiveColumn] = useState<ColumnWithCards | null>(null);
+  const [activeColumn, setActiveColumn] = useState<ColumnWithCards | null>(
+    null,
+  );
   const [shareOpen, setShareOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const localColumnsRef = useRef<ColumnWithCards[] | null>(null);
   const boardColumnsRef = useRef<ColumnWithCards[]>([]);
 
@@ -795,7 +863,9 @@ export function BoardPage() {
   // ── Sensors ────────────────────────────────────────────────────────────────
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
@@ -807,16 +877,24 @@ export function BoardPage() {
       const col = boardColumnsRef.current.find((c) => c.id === event.active.id);
       if (!col) return;
       setActiveColumn(col);
-      const snapshot = boardColumnsRef.current.map((c) => ({ ...c, cards: [...c.cards] }));
+      const snapshot = boardColumnsRef.current.map((c) => ({
+        ...c,
+        cards: [...c.cards],
+      }));
       setLocalColumns(snapshot);
       localColumnsRef.current = snapshot;
       return;
     }
 
-    const card = boardColumnsRef.current.flatMap((col) => col.cards).find((c) => c.id === event.active.id);
+    const card = boardColumnsRef.current
+      .flatMap((col) => col.cards)
+      .find((c) => c.id === event.active.id);
     if (!card) return;
     setActiveCard(card);
-    const snapshot = boardColumnsRef.current.map((col) => ({ ...col, cards: [...col.cards] }));
+    const snapshot = boardColumnsRef.current.map((col) => ({
+      ...col,
+      cards: [...col.cards],
+    }));
     setLocalColumns(snapshot);
     localColumnsRef.current = snapshot;
   }, []);
@@ -843,7 +921,9 @@ export function BoardPage() {
     const activeCardId = active.id as string;
     const overId = over.id as string;
     const prev = localColumnsRef.current;
-    const sourceCol = prev.find((col) => col.cards.some((c) => c.id === activeCardId));
+    const sourceCol = prev.find((col) =>
+      col.cards.some((c) => c.id === activeCardId),
+    );
     const targetCol =
       prev.find((col) => col.id === overId) ??
       prev.find((col) => col.cards.some((c) => c.id === overId));
@@ -852,13 +932,21 @@ export function BoardPage() {
 
     const movingCard = sourceCol.cards.find((c) => c.id === activeCardId)!;
     const overCardIndex = targetCol.cards.findIndex((c) => c.id === overId);
-    const insertIndex = overCardIndex >= 0 ? overCardIndex : targetCol.cards.length;
+    const insertIndex =
+      overCardIndex >= 0 ? overCardIndex : targetCol.cards.length;
 
     const next = prev.map((col) => {
-      if (col.id === sourceCol.id) return { ...col, cards: col.cards.filter((c) => c.id !== activeCardId) };
+      if (col.id === sourceCol.id)
+        return {
+          ...col,
+          cards: col.cards.filter((c) => c.id !== activeCardId),
+        };
       if (col.id === targetCol.id) {
         const newCards = [...col.cards];
-        newCards.splice(insertIndex, 0, { ...movingCard, column_id: targetCol.id });
+        newCards.splice(insertIndex, 0, {
+          ...movingCard,
+          column_id: targetCol.id,
+        });
         return { ...col, cards: newCards };
       }
       return col;
@@ -925,7 +1013,9 @@ export function BoardPage() {
         col.cards.some((c) => c.id === activeCardId),
       );
       if (sourceColBeforeDrag?.id === targetCol.id) {
-        const oldIndex = sourceColBeforeDrag.cards.findIndex((c) => c.id === activeCardId);
+        const oldIndex = sourceColBeforeDrag.cards.findIndex(
+          (c) => c.id === activeCardId,
+        );
         const newIndex = targetCards.findIndex((c) => c.id === overId);
         if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
           targetCards = arrayMove(targetCards, oldIndex, newIndex);
@@ -951,13 +1041,21 @@ export function BoardPage() {
         const rebalanced = rebalance(targetCards.length);
         targetCards.forEach((card, i) => {
           if (card.id !== activeCardId) {
-            moveCard({ cardId: card.id, column_id: targetCol.id, position: rebalanced[i] });
+            moveCard({
+              cardId: card.id,
+              column_id: targetCol.id,
+              position: rebalanced[i],
+            });
           }
         });
         newPosition = rebalanced[droppedIndex];
       }
 
-      moveCard({ cardId: activeCardId, column_id: targetCol.id, position: newPosition });
+      moveCard({
+        cardId: activeCardId,
+        column_id: targetCol.id,
+        position: newPosition,
+      });
       setLocalColumns(null);
       localColumnsRef.current = null;
     },
@@ -975,21 +1073,32 @@ export function BoardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center flex-col gap-4"
-        style={{ background: "oklch(0.12 0.015 265)" }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}>
+      <div
+        className="flex h-screen items-center justify-center flex-col gap-4"
+        style={{ background: "oklch(0.12 0.015 265)" }}
+      >
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+        >
           <Loader2 className="w-7 h-7 text-primary" />
         </motion.div>
-        <p className="text-xs text-on-surface-variant/50 font-medium tracking-wide">Loading board…</p>
+        <p className="text-xs text-on-surface-variant/50 font-medium tracking-wide">
+          Loading board…
+        </p>
       </div>
     );
   }
 
   if (isError || !board) {
     return (
-      <div className="flex h-screen items-center justify-center flex-col gap-4"
-        style={{ background: "oklch(0.12 0.015 265)" }}>
-        <p className="text-on-surface-variant text-sm">Board not found or you don't have access.</p>
+      <div
+        className="flex h-screen items-center justify-center flex-col gap-4"
+        style={{ background: "oklch(0.12 0.015 265)" }}
+      >
+        <p className="text-on-surface-variant text-sm">
+          Board not found or you don't have access.
+        </p>
         <button
           onClick={() => navigate(`/${workspaceId}/boards`)}
           className="text-primary text-sm hover:underline focus:outline-none"
@@ -1001,32 +1110,35 @@ export function BoardPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: "oklch(0.12 0.015 265)" }}>
+    <div
+      className="flex flex-col h-screen overflow-hidden"
+      style={{ background: "oklch(0.12 0.015 265)" }}
+    >
       {/* Dot-grid background */}
       <div
         className="absolute inset-0 pointer-events-none z-0"
         style={{
-          backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.028) 1px, transparent 1px)",
+          backgroundImage:
+            "radial-gradient(circle, rgba(255,255,255,0.028) 1px, transparent 1px)",
           backgroundSize: "28px 28px",
         }}
       />
-
       {/* Ambient top glow */}
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[180px] pointer-events-none z-0"
         style={{
-          background: "radial-gradient(ellipse at top, oklch(0.82 0.14 198 / 0.06) 0%, transparent 70%)",
+          background:
+            "radial-gradient(ellipse at top, oklch(0.82 0.14 198 / 0.06) 0%, transparent 70%)",
         }}
       />
-
       <BoardTopbar
         board={board}
         workspaceId={workspaceId ?? ""}
         onBack={() => navigate(`/${workspaceId}/boards`)}
         onShareClick={() => setShareOpen(true)}
         onMembersClick={() => setMembersOpen(true)}
+        onArchiveClick={() => setArchiveOpen(true)}
       />
-
       {/* ShareBoardDialog — receives my_board_role directly */}
       <ShareBoardDialog
         open={shareOpen}
@@ -1035,7 +1147,6 @@ export function BoardPage() {
         boardTitle={board.title}
         myBoardRole={board.my_board_role}
       />
-
       {/* BoardMembersDialog */}
       <BoardMembersDialog
         open={membersOpen}
@@ -1046,7 +1157,12 @@ export function BoardPage() {
         members={board.members}
         myBoardRole={board.my_board_role}
       />
-
+     {/* ArchivedCardsDrawer */}
+      <ArchivedCardsDrawer
+        boardId={board.id}
+        open={archiveOpen}
+        onClose={() => setArchiveOpen(false)}
+      />
       <DndContext
         sensors={sensors}
         collisionDetection={rectIntersection}
@@ -1071,9 +1187,22 @@ export function BoardPage() {
                     column={column}
                     boardId={boardId ?? ""}
                     index={index}
-                    accentColor={COLUMN_ACCENT_COLORS[index % COLUMN_ACCENT_COLORS.length]}
-                    onAddCard={() => dispatch(openModal({ type: "createCard", columnId: column.id }))}
-                    onAddColumn={() => dispatch(openModal({ type: "createColumn", boardId: boardId ?? "" }))}
+                    accentColor={
+                      COLUMN_ACCENT_COLORS[index % COLUMN_ACCENT_COLORS.length]
+                    }
+                    onAddCard={() =>
+                      dispatch(
+                        openModal({ type: "createCard", columnId: column.id }),
+                      )
+                    }
+                    onAddColumn={() =>
+                      dispatch(
+                        openModal({
+                          type: "createColumn",
+                          boardId: boardId ?? "",
+                        }),
+                      )
+                    }
                   />
                 </SortableContext>
               ))}
@@ -1082,13 +1211,22 @@ export function BoardPage() {
             {/* Add column button — only for users who can create content */}
             {perms.canCreateContent && (
               <AddColumnButton
-                onClick={() => dispatch(openModal({ type: "createColumn", boardId: boardId ?? "" }))}
+                onClick={() =>
+                  dispatch(
+                    openModal({ type: "createColumn", boardId: boardId ?? "" }),
+                  )
+                }
               />
             )}
           </div>
         </main>
 
-        <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}>
+        <DragOverlay
+          dropAnimation={{
+            duration: 200,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+          }}
+        >
           {activeCard ? (
             <div style={{ width: "272px" }}>
               <Card card={activeCard} boardId={boardId ?? ""} isOverlay />
@@ -1101,7 +1239,8 @@ export function BoardPage() {
                 index={columns.findIndex((c) => c.id === activeColumn.id)}
                 accentColor={
                   COLUMN_ACCENT_COLORS[
-                    columns.findIndex((c) => c.id === activeColumn.id) % COLUMN_ACCENT_COLORS.length
+                    columns.findIndex((c) => c.id === activeColumn.id) %
+                      COLUMN_ACCENT_COLORS.length
                   ]
                 }
                 onAddCard={() => {}}

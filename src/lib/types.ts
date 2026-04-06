@@ -241,7 +241,12 @@ export type ApiErrorCode =
   | "CANNOT_REMOVE_BOARD_OWNER"
   | "TARGET_NOT_BOARD_MEMBER"
   | "RATE_LIMITED"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "INVITATION_ALREADY_PENDING"
+  | "INVITATION_INVALID"
+  | "INVITATION_EXPIRED"
+  | "INVITATION_EMAIL_MISMATCH"
+  | "ALREADY_WORKSPACE_MEMBER";
 
 export interface ApiErrorBody {
   error: {
@@ -249,4 +254,40 @@ export interface ApiErrorBody {
     message: string;
     details: Record<string, string> | null;
   };
+}
+
+// ── Invitations ───────────────────────────────────────────────────────────────
+ 
+/** Returned by GET /api/v1/invitations/:token — the public accept page query */
+export interface InvitationDetail {
+  id: string;
+  workspace_id: string;
+  workspace_name: string;
+  invited_email: string;
+  inviter_name: string;
+  role: WorkspaceRole;
+  expires_at: string;
+}
+ 
+/** One row in the pending invitations list on the members management page */
+export interface PendingInvitation {
+  id: string;
+  invited_email: string;
+  inviter_name: string;
+  role: WorkspaceRole;
+  expires_at: string;
+  created_at: string;
+}
+ 
+/** Response from POST /api/v1/workspaces/:id/invitations */
+export interface SendInvitationResponse {
+  id: string;
+  invited_email: string;
+  role: WorkspaceRole;
+  expires_at: string;
+}
+ 
+/** Response from POST /api/v1/invitations/:token/accept */
+export interface AcceptInvitationResponse {
+  workspace_id: string;
 }

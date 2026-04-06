@@ -2,38 +2,32 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutation hook for POST /auth/login.
 //
-// Responsibilities:
-// 1. POST credentials to the backend
-// 2. On success: dispatch setCredentials to Redux (access token + user)
-// 3. Navigate to the page the user was trying to reach before being redirected
-//    to /login, or fall back to /workspaces
+// Extended to handle the invitation auto-accept flow:
 //
-// What this hook does NOT do:
-// - Validate the form — that is React Hook Form + Zod's job
-// - Render anything — that is LoginPage's job
-// - Store the refresh token — it arrives as an HttpOnly cookie automatically
+//   Normal flow:  login → setCredentials → navigate to / (→ RootRedirect)
+//   Invite flow:  login → setCredentials → POST /invitations/:token/accept
+//                 → navigate to /:workspaceId/boards
+//
+// The ?invitation= param is set by InvitationAcceptPage when it redirects
+// non-authenticated users to /login?invitation=:token.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useMutation } from '@tanstack/react-query'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppDispatch } from '@/store/hooks'
 import { setCredentials } from '@/store'
 import api from '@/lib/api'
 import { ROUTES } from '@/lib/routes'
-import type { AuthResponse } from '@/lib/types'
+import { workspacesQueryKey } from '@/hooks/useWorkspaces'
+import type { AuthResponse, AcceptInvitationResponse } from '@/lib/types'
 import type { LoginFormValues } from '@/lib/validations'
 
 export function useLogin() {
-  const dispatch = useAppDispatch()
-  const navigate = useNavigate()
-  const location = useLocation()
-
-  // If the user was redirected here from a protected route, ProtectedRoute
-  // stores the attempted path in location.state.from so we can send them
-  // back after a successful login instead of always dumping them at /workspaces.
-  const from =
-    (location.state as { from?: { pathname: string } } | null)?.from?.pathname ??
-    '/workspaces'
+  const dispatch       = useAppDispatch()
+  const navigate       = useNavigate()
+  const queryClient    = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const invitationToken = searchParams.get('invitation')
 
   const mutation = useMutation({
     mutationFn: (credentials: LoginFormValues) =>
@@ -41,22 +35,35 @@ export function useLogin() {
         .post<AuthResponse>(ROUTES.auth.login, credentials)
         .then((res) => res.data),
 
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       dispatch(
         setCredentials({
           user: data.user,
           access_token: data.access_token,
         }),
       )
-      // replace: true so /login is not in the back-stack after login
-      navigate(from, { replace: true })
+
+      if (invitationToken) {
+        try {
+          const acceptResp = await api
+            .post<AcceptInvitationResponse>(`/invitations/${invitationToken}/accept`)
+            .then((res) => res.data)
+
+          await queryClient.invalidateQueries({ queryKey: workspacesQueryKey })
+          navigate(`/${acceptResp.workspace_id}/boards`, { replace: true })
+          return
+        } catch {
+          // Accept failed — send to root so user can still access their workspace
+          navigate('/', { replace: true })
+          return
+        }
+      }
+
+      // Normal flow
+      navigate('/', { replace: true })
     },
 
-    // onError is intentionally absent here.
-    // The raw AxiosError is available via mutation.error at the call site.
-    // LoginPage reads it and maps the error code to a user-facing message.
-    // Centralising that mapping in the page keeps this hook reusable if we
-    // ever need to trigger login from somewhere other than LoginPage.
+    // onError intentionally absent — LoginPage reads mutation.error
   })
 
   return mutation

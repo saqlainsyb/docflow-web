@@ -17,6 +17,7 @@ import { BoardPage } from "@/pages/workspace/BoardPage";
 import { DocumentEditorPage } from "@/pages/workspace/DocumentEditorPage";
 import { PublicBoardPage } from "@/pages/public/PublicBoardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
+import { InvitationAcceptPage } from "@/pages/invitations/InvitationAcceptPage";
 
 // ── Placeholder pages (replaced one module at a time) ─────────────────────────
 // Inline until each module is built. Never import a page that doesn't exist yet.
@@ -131,6 +132,11 @@ export default function App() {
 
       {/* ── Public routes — no auth required ────────────────────────────── */}
       <Route path="/share/:token" element={<PublicBoardPage />} />
+
+      {/* Invitation accept page — intentionally outside both GuestRoute and
+          ProtectedRoute so both logged-in and logged-out users can reach it.
+          Auth state is checked inside the component to render the correct CTA. */}
+      <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
 
       {/* ── Protected routes ────────────────────────────────────────────── */}
       <Route element={<ProtectedRoute />}>

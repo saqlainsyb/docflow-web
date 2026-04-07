@@ -344,7 +344,7 @@ function PublicTopbar({ board }: { board: BoardDetailResponse }) {
                   initial={{ opacity: 0, scale: 0.7, x: 8 }}
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   transition={{ delay: i * 0.06, type: 'spring', stiffness: 400, damping: 22 }}
-                  title={`${member.name} · ${member.role}`}
+                  title={`${member.name} · ${(member as any).role}`}
                   className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[9px] font-bold select-none cursor-default"
                   style={{
                     background: 'oklch(0.38 0.16 285)',

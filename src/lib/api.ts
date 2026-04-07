@@ -5,7 +5,7 @@ import { setAccessToken, clearCredentials } from '@/store'
 // ── Axios instance ────────────────────────────────────────────────────────────
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: import.meta.env.VITE_API_URL ?? '/api/v1',
   withCredentials: true, // sends the HttpOnly refresh_token cookie on every request
   headers: {
     'Content-Type': 'application/json',

@@ -1,27 +1,44 @@
 // src/components/board/Card.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// FIX: Card options menu no longer flickers / immediately closes.
+// Pragmatic DnD replacement for dnd-kit's useSortable on cards.
 //
-// Root cause: wrapping <DropdownMenu> in <AnimatePresence> was unmounting the
-// trigger button the moment hover ended — even if the menu was mid-open —
-// causing Radix to close it immediately.
+// Architecture:
+//   - draggable()          → makes the card draggable
+//   - dropTargetForElements → receives other cards for closest-edge insertion
+//   - All drop state (closest edge) is local to this component — it only drives
+//     the DropIndicator line rendering; no parent re-renders during drag motion.
+//   - The board-level monitorForElements (in BoardPage) is the ONLY place that
+//     calls moveCard / reorderColumn. Cards never mutate state on drop.
 //
-// Fix (mirrors Column.tsx): the DropdownMenu + trigger are ALWAYS mounted.
-// Visibility is controlled purely through CSS opacity + pointer-events so the
-// DOM element is stable throughout the menu's open lifecycle.
+// UI/UX: identical to the dnd-kit version —
+//   - Glassmorphism card shell with color accent bar
+//   - Shimmer sweep on hover
+//   - Magnetic lift (whileHover y: -3) via Framer Motion
+//   - Dragging state: card becomes a ghost placeholder (dashed border)
+//   - Overlay mode: tilted + scaled ghost in the DragPreview
+//   - DropIndicator line (from @atlaskit/pragmatic-drag-and-drop-react-drop-indicator)
+//     appears above/below the card to show insertion point
 //
-// All functionality preserved: useSortable, navigate to document editor,
-// archiveCard, deleteCard, editCard modal.
+// Key fixes vs dnd-kit:
+//   - No layout prop on draggable elements (avoids Framer Motion infinite loop)
+//   - draggable listeners are on the whole card; DropdownMenu trigger has
+//     onPointerDown stopPropagation so it never accidentally starts a drag
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { motion, AnimatePresence } from 'motion/react'
 import {
   MoreHorizontal, FileText, Pencil, Archive, Trash2, Loader2, User,
 } from 'lucide-react'
+import { draggable, dropTargetForElements }
+  from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
+import { attachClosestEdge, extractClosestEdge }
+  from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
+import { DropIndicator }
+  from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box'
+import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/types'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -42,6 +59,7 @@ import { useAppDispatch } from '@/store/hooks'
 import { openModal } from '@/store'
 import { useArchiveCard } from '@/hooks/useArchiveCard'
 import { useDeleteCard } from '@/hooks/useDeleteCard'
+import { isCardData } from '@/types/dnd'
 import { cn } from '@/lib/utils'
 import { getInitials } from '@/lib/utils'
 import type { CardResponse } from '@/lib/types'
@@ -69,13 +87,20 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-// ── Shared dialog styles ──────────────────────────────────────────────────────
 const DIALOG_CONTENT_STYLE = {
   background: 'linear-gradient(160deg, oklch(0.175 0.018 265) 0%, oklch(0.155 0.014 265) 100%)',
   border: '1px solid rgba(255,255,255,0.08)',
   boxShadow: '0 32px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
   borderRadius: '1.25rem',
 }
+
+// ── Local drag state for this card ────────────────────────────────────────────
+type CardDragState =
+  | { type: 'idle' }
+  | { type: 'dragging' }
+  | { type: 'over'; closestEdge: Edge | null }
+
+const idle: CardDragState = { type: 'idle' }
 
 // ── Card ──────────────────────────────────────────────────────────────────────
 
@@ -84,24 +109,57 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
   const navigate = useNavigate()
   const { workspaceId } = useParams<{ workspaceId: string }>()
 
-  // ── Hover + menu state ────────────────────────────────────────────────────
   const [isHovered, setIsHovered] = useState(false)
-  // Track menu open state independently — keeps button visible while menu is open
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [dragState, setDragState] = useState<CardDragState>(idle)
+
+  const cardRef = useRef<HTMLDivElement>(null)
 
   const { mutate: archiveCard, isPending: isArchiving } = useArchiveCard(boardId)
   const { mutate: deleteCard, isPending: isDeleting } = useDeleteCard(boardId)
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: card.id,
-    disabled: isOverlay,
-  })
+  // ── Pragmatic DnD registration ─────────────────────────────────────────────
+  useEffect(() => {
+    if (isOverlay) return
+    const el = cardRef.current
+    if (!el) return
 
-  const dndStyle = {
-    transform: CSS.Transform.toString(transform),
-    transition: isDragging ? undefined : transition,
-  }
+    return combine(
+      draggable({
+        element: el,
+        getInitialData: () => ({
+          type: 'card',
+          cardId: card.id,
+          columnId: card.column_id,
+        }),
+        onDragStart: () => setDragState({ type: 'dragging' }),
+        onDrop: () => setDragState(idle),
+      }),
+      dropTargetForElements({
+        element: el,
+        // Don't accept drops from the same card; only accept card drags (not columns)
+        canDrop: ({ source }) => isCardData(source.data) && source.data.cardId !== card.id,
+        getData: ({ input, element }) =>
+          attachClosestEdge(
+            { type: 'card', cardId: card.id, columnId: card.column_id },
+            { input, element, allowedEdges: ['top', 'bottom'] },
+          ),
+        onDragEnter: ({ self }) =>
+          setDragState({ type: 'over', closestEdge: extractClosestEdge(self.data) }),
+        // onDrag fires every pointer move — only update if edge actually changed
+        onDrag: ({ self }) => {
+          const edge = extractClosestEdge(self.data)
+          setDragState(prev => {
+            if (prev.type === 'over' && prev.closestEdge === edge) return prev
+            return { type: 'over', closestEdge: edge }
+          })
+        },
+        onDragLeave: () => setDragState(idle),
+        onDrop: () => setDragState(idle),
+      }),
+    )
+  }, [card.id, card.column_id, isOverlay])
 
   function handleTitleClick(e: React.MouseEvent) {
     e.stopPropagation()
@@ -115,39 +173,39 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
     ? `0 8px 32px ${colorConfig.glow}, 0 2px 8px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.055)`
     : `${DEFAULT_HOVER_SHADOW}, 0 2px 8px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.055)`
 
-  // Button is visible when hovering OR menu is open (same pattern as Column.tsx)
   const showMenuButton = (isHovered || menuOpen) && !deleteOpen
+  const isDragging = dragState.type === 'dragging'
 
-  // ── Placeholder slot while dragging ───────────────────────────────────────
+  // ── Placeholder ghost while dragging ──────────────────────────────────────
+  // The real card becomes invisible and a dashed placeholder takes its space.
+  // The floating ghost is rendered by BoardPage's custom drag preview.
   if (isDragging && !isOverlay) {
     return (
       <div
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
+        ref={cardRef}
         className="rounded-2xl"
         style={{
           height: '80px',
           border: '1.5px dashed rgba(255,255,255,0.10)',
           background: 'rgba(255,255,255,0.02)',
           borderRadius: '1rem',
-          ...dndStyle,
         }}
       />
     )
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={dndStyle}
-      {...attributes}
-      {...listeners}
-      className="relative"
-    >
+    <div ref={cardRef} className="relative">
+      {/* Drop indicator ABOVE the card */}
+      {dragState.type === 'over' && dragState.closestEdge === 'top' && (
+        <DropIndicator edge="top" gap="8px" />
+      )}
+
       <motion.div
         onHoverStart={() => setIsHovered(true)}
         onHoverEnd={() => setIsHovered(false)}
+        // Disable layout during drag to avoid Framer Motion infinite loop
+        // (see SKILL.md: "Framer Motion Compatibility Fix")
         whileHover={!isOverlay ? {
           y: -3,
           transition: { type: 'spring', stiffness: 420, damping: 28 },
@@ -288,7 +346,6 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
         </div>
 
         {/* ── Options button — ALWAYS mounted, visibility via opacity ──────── */}
-        {/* Critical fix: never unmount DropdownMenu. Same pattern as Column.tsx */}
         {!isOverlay && (
           <div
             className="absolute top-2.5 right-2.5 z-20"
@@ -300,9 +357,7 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
           >
             <DropdownMenu
               open={menuOpen}
-              onOpenChange={(open) => {
-                setMenuOpen(open)
-              }}
+              onOpenChange={(open) => setMenuOpen(open)}
             >
               <DropdownMenuTrigger asChild>
                 <button
@@ -400,8 +455,12 @@ export function Card({ card, boardId, isOverlay = false }: CardProps) {
         )}
       </motion.div>
 
+      {/* Drop indicator BELOW the card */}
+      {dragState.type === 'over' && dragState.closestEdge === 'bottom' && (
+        <DropIndicator edge="bottom" gap="8px" />
+      )}
+
       {/* ── Delete confirmation dialog ──────────────────────────────────────── */}
-      {/* Rendered outside the motion card so it's never clipped by overflow:hidden */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent
           className="sm:max-w-sm p-0 overflow-hidden gap-0"

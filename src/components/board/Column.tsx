@@ -1,30 +1,42 @@
 // src/components/board/Column.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// FIX: Column options menu no longer flickers / immediately closes.
+// Pragmatic DnD replacement for dnd-kit's useSortable + useDroppable on columns.
 //
-// Root cause: wrapping <DropdownMenu> in <AnimatePresence> was unmounting the
-// trigger button the moment hover ended — even if the menu was open — which
-// caused Radix to close it immediately.
+// Architecture:
+//   - draggable()           → column header (GripVertical) is the drag handle
+//   - dropTargetForElements → column body receives card drops (cross-column +
+//                             empty column) and column drops (reorder)
+//   - autoScrollForElements → smooth scroll of the card list while dragging
+//   - State changes (card-over highlight, dragging dim) are LOCAL to this
+//     component — they never trigger a parent re-render during drag motion.
+//   - The board-level monitorForElements (in BoardPage) handles all state
+//     mutations (moveCard / reorderColumn).
 //
-// Fix: the DropdownMenu + trigger are ALWAYS mounted. Visibility is controlled
-// purely through CSS opacity + pointer-events, so the DOM element is stable
-// throughout the menu's open lifecycle.
+// UI/UX: identical to the dnd-kit version —
+//   - Glassmorphism shell with per-column accent color
+//   - GripVertical drag handle in the header
+//   - card-over state: subtle ring + background tint
+//   - dragging state: 0.4 opacity ghost
+//   - Empty column: animated "Drop cards here" state
+//   - DropdownMenu with Add card / Rename / Delete (same fix: always mounted)
+//   - Rename + Delete dialogs with Obsidian Studio styling
 //
-// Also added: Rename column dialog + board-consistent styling on all dialogs.
-//
-// Column drag-to-reorder: the column root is now a sortable item via
-// useSortable. The GripVertical icon in the header acts as the drag handle —
-// listeners are scoped to it so card text inputs and buttons are not affected.
+// Framer Motion note:
+//   Cards inside the column use layout="position" (not layout) to avoid
+//   triggering getBoundingClientRect on every frame during a drag.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useRef } from 'react'
-import { useDroppable } from '@dnd-kit/core'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { useEffect, useRef, useState } from 'react'
 import {
   MoreHorizontal, Plus, Trash2, Loader2, Layers, Pencil, GripVertical,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
+import { draggable, dropTargetForElements }
+  from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
+import { autoScrollForElements }
+  from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element'
+import { isCardData, isColumnData } from '@/types/dnd'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -59,9 +71,8 @@ interface ColumnProps {
   onAddColumn: () => void
   index?: number
   accentColor?: AccentColor
-  // When true, the column is being rendered inside DragOverlay — skip
-  // useSortable transforms and droppable registration so there are no
-  // conflicting ref assignments on the same column ID.
+  // When true, the column is rendered inside the drag preview —
+  // skip all DnD registrations to avoid conflicting ref assignments.
   isOverlay?: boolean
 }
 
@@ -82,11 +93,11 @@ const cardVariants = {
   },
 }
 
-// ── Shared dialog styles ──────────────────────────────────────────────────────
 const DIALOG_OVERLAY_STYLE = {
   background: 'oklch(0.10 0.015 265 / 0.85)',
   backdropFilter: 'blur(8px)',
 }
+void DIALOG_OVERLAY_STYLE
 
 const DIALOG_CONTENT_STYLE = {
   background: 'linear-gradient(160deg, oklch(0.175 0.018 265) 0%, oklch(0.155 0.014 265) 100%)',
@@ -95,9 +106,8 @@ const DIALOG_CONTENT_STYLE = {
   borderRadius: '1.25rem',
 }
 
-// Suppress unused-variable warning — DIALOG_OVERLAY_STYLE is kept for
-// potential future use (matching BoardPage's pattern).
-void DIALOG_OVERLAY_STYLE
+// ── Local drag state ──────────────────────────────────────────────────────────
+type ColumnDragState = 'idle' | 'card-over' | 'column-over' | 'dragging'
 
 // ── Column ────────────────────────────────────────────────────────────────────
 
@@ -114,53 +124,61 @@ export function Column({
   const [renameValue, setRenameValue] = useState(column.title)
   const [headerHovered, setHeaderHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [dragState, setDragState] = useState<ColumnDragState>('idle')
 
+  const columnRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   const { mutate: deleteColumn, isPending: isDeleting } = useDeleteColumn(boardId)
   const { mutate: renameColumn, isPending: isRenaming } = useRenameColumn(boardId)
 
-  // ── Sortable (column-level drag) ───────────────────────────────────────────
-  // We use a drag handle (GripVertical) so that interactions inside the column
-  // — clicking cards, typing in inputs — never accidentally start a column drag.
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setSortableRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: column.id,
-    // Tell dnd-kit this is a column, not a card. BoardPage's handlers use this
-    // to distinguish which drag type is active without inspecting IDs.
-    data: { type: 'column' },
-    disabled: isOverlay,
-  })
+  // ── Pragmatic DnD registration ─────────────────────────────────────────────
+  useEffect(() => {
+    if (isOverlay) return
+    const columnEl = columnRef.current
+    const headerEl = headerRef.current
+    const scrollEl = scrollRef.current
+    if (!columnEl || !headerEl || !scrollEl) return
 
-  // ── Droppable (card drop target) ───────────────────────────────────────────
-  const { isOver, setNodeRef: setDropRef } = useDroppable({
-    id: column.id,
-    disabled: isOverlay,
-  })
+    return combine(
+      // Column is draggable via the header grip handle only
+      draggable({
+        element: columnEl,
+        dragHandle: headerEl,
+        getInitialData: () => ({ type: 'column', columnId: column.id }),
+        onDragStart: () => setDragState('dragging'),
+        onDrop: () => setDragState('idle'),
+      }),
 
-  // Merge sortable + droppable refs onto the same DOM node.
-  function setRef(el: HTMLDivElement | null) {
-    setSortableRef(el)
-    setDropRef(el)
-  }
+      // Column receives CARD drops (cross-column move + empty column drop)
+      // Card drops onto cards are handled by each Card's own dropTarget.
+      // This target fires when a card is dragged over the column background
+      // (i.e., below all cards, or into an empty column).
+      dropTargetForElements({
+        element: columnEl,
+        canDrop: ({ source }) => isCardData(source.data),
+        getData: () => ({ type: 'column', columnId: column.id }),
+        onDragEnter: () => setDragState('card-over'),
+        onDragLeave: () => setDragState('idle'),
+        onDrop: () => setDragState('idle'),
+      }),
 
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    // Dim the original column while it is being dragged — the DragOverlay
-    // ghost shows at full opacity in its place.
-    opacity: isDragging ? 0.4 : 1,
-  }
+      // Auto-scroll the card list when a card drag approaches the edges
+      autoScrollForElements({
+        element: scrollEl,
+        canScroll: ({ source }) => isCardData(source.data),
+      }),
+    )
+  }, [column.id, isOverlay])
 
   const cardCount = column.cards.length
   const hasCards = cardCount > 0
   const { dot } = accentColor
+
+  const isDragging = dragState === 'dragging'
+  const isCardOver = dragState === 'card-over'
 
   const showMenuButton = headerHovered || menuOpen
 
@@ -189,23 +207,24 @@ export function Column({
   return (
     <>
       <div
-        ref={setRef}
+        ref={columnRef}
         className="shrink-0 w-72 flex flex-col rounded-2xl relative"
         style={{
-          ...style,
           maxHeight: 'calc(100vh - 120px)',
           minHeight: '160px',
-          background: isOver
+          // Dim the original while its ghost is being dragged elsewhere
+          opacity: isDragging ? 0.4 : 1,
+          background: isCardOver
             ? `linear-gradient(175deg, oklch(0.21 0.020 265 / 0.9) 0%, oklch(0.18 0.017 265 / 0.88) 100%)`
             : `linear-gradient(175deg, oklch(0.195 0.016 265 / 0.82) 0%, oklch(0.165 0.014 265 / 0.80) 100%)`,
           backdropFilter: 'blur(22px) saturate(160%)',
-          border: isOver
+          border: isCardOver
             ? `1px solid ${dot}44`
             : '1px solid rgba(255,255,255,0.065)',
-          boxShadow: isOver
+          boxShadow: isCardOver
             ? `0 0 0 2px ${dot}20, 0 8px 40px rgba(0,0,0,0.36), inset 0 1px 0 rgba(255,255,255,0.07)`
             : '0 4px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.055)',
-          transition: 'background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease',
+          transition: 'background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, opacity 0.18s ease',
         }}
       >
         {/* Inner top-edge light seam */}
@@ -218,18 +237,15 @@ export function Column({
 
         {/* ── Column header ──────────────────────────────────────────────── */}
         <div
-          className="flex items-center justify-between px-4 pt-4 pb-3 relative"
+          ref={headerRef}
+          className="flex items-center justify-between px-4 pt-4 pb-3 relative cursor-grab active:cursor-grabbing"
           onMouseEnter={() => setHeaderHovered(true)}
           onMouseLeave={() => setHeaderHovered(false)}
         >
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            {/* ── Drag handle — ONLY this element starts a column drag ─────
-                Listeners are scoped here so clicks anywhere else in the
-                column (cards, buttons, inputs) are never swallowed by dnd. */}
+            {/* Drag handle icon — visual affordance only; the whole header is the handle */}
             <div
-              {...attributes}
-              {...listeners}
-              className="shrink-0 flex items-center justify-center w-4 h-4 rounded cursor-grab active:cursor-grabbing focus:outline-none"
+              className="shrink-0 flex items-center justify-center w-4 h-4 rounded focus:outline-none"
               style={{
                 opacity: showMenuButton ? 0.55 : 0.2,
                 transition: 'opacity 0.15s ease',
@@ -267,9 +283,8 @@ export function Column({
               {column.title}
             </h3>
 
-            {/* Card count badge */}
-            <motion.div
-              layout
+            {/* Card count badge — layout disabled to avoid Framer Motion + DnD loop */}
+            <div
               className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums"
               style={{
                 background: hasCards ? `${dot}1A` : 'rgba(255,255,255,0.06)',
@@ -279,12 +294,13 @@ export function Column({
               }}
             >
               {cardCount}
-            </motion.div>
+            </div>
           </div>
 
           {/* ── Options button — ALWAYS mounted, visibility via opacity ──── */}
-          {/* This is the critical fix: never unmount DropdownMenu */}
           <div
+            // Stop pointer events from bubbling to the drag handle
+            onPointerDown={(e) => e.stopPropagation()}
             style={{
               opacity: showMenuButton ? 1 : 0,
               pointerEvents: showMenuButton ? 'auto' : 'none',
@@ -395,6 +411,7 @@ export function Column({
 
         {/* ── Card list ─────────────────────────────────────────────────── */}
         <div
+          ref={scrollRef}
           className="flex-1 overflow-y-auto flex flex-col gap-2 px-3 pb-2 min-h-0 column-scroll"
           style={{ scrollbarWidth: 'none' }}
         >
@@ -429,6 +446,8 @@ export function Column({
                 className="flex flex-col gap-2"
               >
                 {column.cards.map((card) => (
+                  // layout="position" avoids triggering getBoundingClientRect
+                  // recalculation on every Framer frame during a sibling drag.
                   <motion.div key={card.id} variants={cardVariants} layout="position">
                     <Card card={card} boardId={boardId} />
                   </motion.div>
@@ -438,9 +457,9 @@ export function Column({
           </AnimatePresence>
         </div>
 
-        {/* Drop zone highlight ring */}
+        {/* Drop zone highlight ring — shown when a card is dragged over */}
         <AnimatePresence>
-          {isOver && (
+          {isCardOver && (
             <motion.div
               key="drop-ring"
               initial={{ opacity: 0 }}

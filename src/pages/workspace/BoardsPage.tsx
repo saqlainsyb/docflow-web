@@ -189,103 +189,151 @@ function BoardsTopbar({
   onCreateBoard,
 }: BoardsTopbarProps) {
   const [searchFocused, setSearchFocused] = useState(false)
-
+  const [searchOpen, setSearchOpen] = useState(false)
+ 
   return (
     <motion.header
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="h-[60px] flex items-center justify-between px-6 sticky top-0 z-30"
+      // On mobile the AppLayout renders a 56px nav bar above this,
+      // so top-14 keeps this header below it. On lg+ the sidebar has no top bar.
+      className="flex flex-col sticky top-14 lg:top-0 z-20"
       style={{
-        background: 'oklch(0.12 0.015 265 / 80%)',
+        background: 'oklch(0.12 0.015 265 / 85%)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         borderBottom: '1px solid oklch(0.35 0.015 265 / 10%)',
       }}
     >
-      {/* Left — breadcrumb */}
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="font-display font-semibold text-sm text-on-surface-variant truncate max-w-40">
-          {workspaceName}
-        </span>
-        <ChevronRight className="w-3.5 h-3.5 text-outline/40 shrink-0" />
-        <span className="font-display font-bold text-sm text-on-surface whitespace-nowrap">
-          Boards
-        </span>
-        {boardCount > 0 && (
-          <motion.span
-            key={boardCount}
-            initial={{ scale: 0.7, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums"
-            style={{ background: 'oklch(0.82 0.14 198 / 12%)', color: 'oklch(0.82 0.14 198)' }}
+      {/* Primary row */}
+      <div className="h-[52px] flex items-center justify-between px-4 lg:px-6">
+ 
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="hidden sm:block font-display font-semibold text-sm text-on-surface-variant truncate max-w-32">
+            {workspaceName}
+          </span>
+          <ChevronRight className="hidden sm:block w-3.5 h-3.5 text-outline/40 shrink-0" />
+          <span className="font-display font-bold text-sm text-on-surface whitespace-nowrap">
+            Boards
+          </span>
+          {boardCount > 0 && (
+            <motion.span
+              key={boardCount}
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums"
+              style={{ background: 'oklch(0.82 0.14 198 / 12%)', color: 'oklch(0.82 0.14 198)' }}
+            >
+              {boardCount}
+            </motion.span>
+          )}
+        </div>
+ 
+        {/* Actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Search icon — mobile toggle */}
+          <button
+            onClick={() => setSearchOpen((v) => !v)}
+            aria-label="Toggle search"
+            className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl text-outline hover:text-on-surface hover:bg-surface-container transition-colors duration-150 focus:outline-none"
           >
-            {boardCount}
-          </motion.span>
-        )}
-      </div>
-
-      {/* Center — search */}
-      <div className="flex-1 max-w-sm mx-6">
-        <motion.div
-          animate={searchFocused ? { scale: 1.015 } : { scale: 1 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          className="relative"
-        >
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors duration-200"
-            style={{ color: searchFocused ? 'oklch(0.82 0.14 198)' : 'oklch(0.56 0.012 265)' }}
-            aria-hidden="true"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            placeholder="Search boards…"
-            className="w-full pl-9 pr-4 py-2 text-sm rounded-xl bg-surface-container-lowest text-on-surface placeholder:text-outline/40 outline-none transition-all duration-200"
-            style={{
-              border: searchFocused
-                ? '1px solid oklch(0.82 0.14 198 / 40%)'
-                : '1px solid oklch(0.35 0.015 265 / 12%)',
-              boxShadow: searchFocused
-                ? '0 0 0 3px oklch(0.82 0.14 198 / 8%), 0 2px 8px oklch(0 0 0 / 20%)'
-                : 'none',
-            }}
-          />
-        </motion.div>
-      </div>
-
-      {/* Right — actions */}
-      <div className="flex items-center gap-2.5 shrink-0">
-        {canManage && (
+            <Search className="w-4 h-4" />
+          </button>
+ 
+          {canManage && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={onInvite}
+              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-on-surface-variant transition-colors duration-150 focus:outline-none"
+              style={{
+                background: 'oklch(0.21 0.015 265)',
+                border: '1px solid oklch(0.35 0.015 265 / 15%)',
+              }}
+            >
+              <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
+              Invite
+            </motion.button>
+          )}
+ 
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={onInvite}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-on-surface-variant transition-colors duration-150 focus:outline-none"
-            style={{
-              background: 'oklch(0.21 0.015 265)',
-              border: '1px solid oklch(0.35 0.015 265 / 15%)',
-            }}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={onCreateBoard}
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-primary-foreground focus:outline-none df-gradient-cta"
+            style={{ boxShadow: '0 2px 16px oklch(0.82 0.14 198 / 22%)' }}
           >
-            <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
-            Invite
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+            <span className="hidden sm:inline">New Board</span>
+            <span className="sm:hidden">New</span>
           </motion.button>
-        )}
-
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.96 }}
-          onClick={onCreateBoard}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-primary-foreground focus:outline-none df-gradient-cta"
-          style={{ boxShadow: '0 2px 16px oklch(0.82 0.14 198 / 22%)' }}
-        >
-          <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-          New Board
-        </motion.button>
+        </div>
       </div>
+ 
+      {/* Desktop search — always visible md+ */}
+      <div className="hidden md:block px-6 pb-3">
+        <div className="max-w-sm">
+          <div className="relative">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors duration-200"
+              style={{ color: searchFocused ? 'oklch(0.82 0.14 198)' : 'oklch(0.56 0.012 265)' }}
+              aria-hidden="true"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              placeholder="Search boards…"
+              className="w-full pl-9 pr-4 py-2 text-sm rounded-xl bg-surface-container-lowest text-on-surface placeholder:text-outline/40 outline-none transition-all duration-200"
+              style={{
+                border: searchFocused
+                  ? '1px solid oklch(0.82 0.14 198 / 40%)'
+                  : '1px solid oklch(0.35 0.015 265 / 12%)',
+                boxShadow: searchFocused
+                  ? '0 0 0 3px oklch(0.82 0.14 198 / 8%), 0 2px 8px oklch(0 0 0 / 20%)'
+                  : 'none',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+ 
+      {/* Mobile collapsible search */}
+      <AnimatePresence>
+        {searchOpen && (
+          <motion.div
+            key="mobile-search"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden md:hidden px-4 pb-3"
+          >
+            <div className="relative">
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-outline/60"
+                aria-hidden="true"
+              />
+              <input
+                autoFocus
+                type="text"
+                value={search}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search boards…"
+                className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl bg-surface-container-lowest text-on-surface placeholder:text-outline/40 outline-none"
+                style={{
+                  border: '1px solid oklch(0.82 0.14 198 / 40%)',
+                  boxShadow: '0 0 0 3px oklch(0.82 0.14 198 / 8%)',
+                }}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.header>
   )
 }
@@ -687,7 +735,7 @@ function BoardsGrid({ boards, viewMode, onCreateBoard, onBoardClick }: BoardsGri
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-5"
     >
       <AnimatePresence mode="popLayout">
         {boards.map((board, i) => (
@@ -895,7 +943,7 @@ export function BoardsPage() {
         onCreateBoard={handleCreateBoard}
       />
 
-      <div className="flex-1 p-8 relative">
+      <div className="flex-1 p-4 sm:p-6 lg:p-8 relative">
         <div className="max-w-7xl mx-auto">
 
           <PageHero

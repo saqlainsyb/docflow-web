@@ -132,7 +132,7 @@ function MembersTopbar({ workspaceName }: { workspaceName: string }) {
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="h-14 flex items-center gap-3 px-8 sticky top-0 z-30"
+      className="h-14 flex items-center gap-2 px-4 lg:px-8 sticky top-14 lg:top-0 z-30"
       style={{
         background: 'oklch(0.12 0.015 265 / 80%)',
         backdropFilter: 'blur(24px)',
@@ -140,8 +140,10 @@ function MembersTopbar({ workspaceName }: { workspaceName: string }) {
         borderBottom: '1px solid oklch(0.35 0.015 265 / 10%)',
       }}
     >
-      <span className="text-sm font-semibold text-on-surface-variant truncate max-w-40">{workspaceName}</span>
-      <span className="text-outline/40 text-sm">/</span>
+      <span className="hidden sm:block text-sm font-semibold text-on-surface-variant truncate max-w-40">
+        {workspaceName}
+      </span>
+      <span className="hidden sm:block text-outline/40 text-sm">/</span>
       <span className={cn(
         'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md',
         'text-xs font-semibold text-primary bg-primary/[0.08] border border-primary/[0.12]',
@@ -282,7 +284,7 @@ function MemberCard({ member, currentUserId, viewerRole, workspaceId, onRemove }
     <motion.div
       variants={cardVariants}
       layout
-      className="group relative flex items-center gap-4 px-5 py-4 rounded-xl border border-outline-variant/10 bg-surface-container-low"
+      className="group relative flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 rounded-xl border border-outline-variant/10 bg-surface-container-low"
       whileHover={{ borderColor: 'oklch(0.35 0.015 265 / 22%)', backgroundColor: 'oklch(0.18 0.015 265)', transition: { duration: 0.15 } }}
     >
       <div
@@ -695,7 +697,7 @@ export function MembersPage() {
 
       <MembersTopbar workspaceName={workspace?.name ?? ''} />
 
-      <div className="flex-1 p-8 relative">
+      <div className="flex-1 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         <div className="max-w-3xl mx-auto space-y-8">
 
           {/* ── Page heading ─────────────────────────────────────────── */}
@@ -742,7 +744,7 @@ export function MembersPage() {
           </div>
 
           {/* ── Stats ─────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
             <StatCard label="Total members"   value={members.length}               sublabel={`in ${workspace?.name ?? 'workspace'}`}                     index={0} />
             <StatCard label="Admins"          value={adminCount}                   sublabel={ownerCount === 1 ? '+ 1 owner' : `+ ${ownerCount} owners`}  accent="text-df-secondary" index={1} />
             {canManage

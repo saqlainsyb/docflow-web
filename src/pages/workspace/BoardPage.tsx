@@ -38,7 +38,21 @@
 //   - Permission gating, member avatars, archive/members/share dialogs
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+
+// ── useIsMobile ───────────────────────────────────────────────────────────────
+// SSR-safe, MediaQueryList-based — no polling, no resize listeners.
+function subscribe(cb: () => void) {
+  const mql = window.matchMedia("(max-width: 767px)");
+  mql.addEventListener("change", cb);
+  return () => mql.removeEventListener("change", cb);
+}
+function getSnapshot() {
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+function useIsMobile() {
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
+}
 import { useParams, useNavigate } from "react-router-dom";
 import {
   monitorForElements,
@@ -166,6 +180,7 @@ function BoardTopbar({
   archivedCount,
 }: BoardTopbarProps) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState(board.title);
@@ -176,7 +191,9 @@ function BoardTopbar({
   const { mutate: deleteBoard, isPending: isDeleting } = useDeleteBoard(board.id, workspaceId);
   const perms = useBoardPermissions(board.my_board_role);
 
-  const visibleMembers = board.members.slice(0, 4);
+  // On mobile show fewer avatars to preserve space
+  const maxAvatars = isMobile ? 2 : 4;
+  const visibleMembers = board.members.slice(0, maxAvatars);
   const overflowCount = board.members.length - visibleMembers.length;
   const totalCards = board.columns.reduce((acc, col) => acc + col.cards.length, 0);
   const isPublic = board.visibility === "workspace";
@@ -254,148 +271,137 @@ function BoardTopbar({
                 {board.title}
               </h1>
 
-              {/* Visibility pill */}
-              <span
-                className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
-                style={{
-                  background: isPublic ? "rgba(52,211,153,0.10)" : "rgba(255,255,255,0.06)",
-                  border: isPublic ? "1px solid rgba(52,211,153,0.20)" : "1px solid rgba(255,255,255,0.08)",
-                  color: isPublic ? "#34D399" : "rgba(255,255,255,0.4)",
-                }}
-              >
-                {isPublic ? <Globe className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
-                {board.visibility}
-              </span>
-
-              {/* My board role pill */}
-              <span
-                className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
-                style={{
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  color: "rgba(255,255,255,0.38)",
-                }}
-              >
-                {boardRoleLabel(board.my_board_role)}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3 mt-0.5">
-              <span className="text-[11px] text-on-surface-variant/50 flex items-center gap-1">
-                <LayoutGrid className="w-2.75 h-2.75" />
-                {board.columns.length} columns
-              </span>
-              <span className="text-[11px] text-on-surface-variant/50 flex items-center gap-1">
-                <Sparkles className="w-2.75 h-2.75" />
-                {totalCards} cards
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: members + actions */}
-        <div className="flex items-center gap-3 shrink-0">
-          {visibleMembers.length > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="flex -space-x-2.5">
-                {visibleMembers.map((member, i) => (
-                  <motion.div
-                    key={member.user_id}
-                    initial={{ opacity: 0, scale: 0.7, x: 8 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    transition={{ delay: i * 0.06, type: "spring", stiffness: 400, damping: 22 }}
-                    title={`${member.name} · ${boardRoleLabel(member.board_role)}`}
-                    className={cn(
-                      "w-8 h-8 rounded-full shrink-0",
-                      "flex items-center justify-center text-[9px] font-bold select-none cursor-default",
-                    )}
-                    style={{
-                      background: "oklch(0.38 0.16 285)",
-                      color: "oklch(0.88 0.08 285)",
-                      border: "2px solid oklch(0.13 0.015 265)",
-                      boxShadow: "0 0 0 1px rgba(255,255,255,0.06)",
-                    }}
-                  >
-                    {member.avatar_url ? (
-                      <img src={member.avatar_url} alt={member.name} className="w-full h-full rounded-full object-cover" />
-                    ) : (
-                      getInitials(member.name)
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-
-              {overflowCount > 0 && (
-                <span className="text-[11px] font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>
-                  +{overflowCount} more
+              {/* Visibility pill — hidden on mobile to save space */}
+              {!isMobile && (
+                <span
+                  className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                  style={{
+                    background: isPublic ? "rgba(52,211,153,0.10)" : "rgba(255,255,255,0.06)",
+                    border: isPublic ? "1px solid rgba(52,211,153,0.20)" : "1px solid rgba(255,255,255,0.08)",
+                    color: isPublic ? "#34D399" : "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  {isPublic ? <Globe className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
+                  {board.visibility}
                 </span>
               )}
 
-              <span className="flex items-center gap-1 text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-                <Users className="w-2.75 h-2.75" />
-                {board.members.length}
-              </span>
+              {/* My board role pill — hidden on mobile */}
+              {!isMobile && (
+                <span
+                  className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.38)",
+                  }}
+                >
+                  {boardRoleLabel(board.my_board_role)}
+                </span>
+              )}
             </div>
-          )}
 
-          <div className="w-px h-5 bg-white/8" />
-
-          {/* Archive */}
-          <motion.button
-            onClick={onArchiveClick}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 450, damping: 25 }}
-            className={cn(
-              "relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors",
+            {/* Stats row — hidden on mobile */}
+            {!isMobile && (
+              <div className="flex items-center gap-3 mt-0.5">
+                <span className="text-[11px] text-on-surface-variant/50 flex items-center gap-1">
+                  <LayoutGrid className="w-2.75 h-2.75" />
+                  {board.columns.length} columns
+                </span>
+                <span className="text-[11px] text-on-surface-variant/50 flex items-center gap-1">
+                  <Sparkles className="w-2.75 h-2.75" />
+                  {totalCards} cards
+                </span>
+              </div>
             )}
-            style={{
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.09)",
-              color: "rgba(255,255,255,0.55)",
-            }}
-          >
-            <ArchiveRestore className="w-3.5 h-3.5" />
-            Archive
-            {archivedCount !== undefined && archivedCount > 0 && (
-              <span
-                className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center"
-                style={{
-                  background: "oklch(0.42 0.09 198)",
-                  color: "oklch(0.91 0.015 265)",
-                  border: "1.5px solid oklch(0.155 0.016 265)",
-                }}
-              >
-                {archivedCount > 99 ? "99+" : archivedCount}
-              </span>
-            )}
-          </motion.button>
+          </div>
+        </div>
 
-          {/* Members */}
-          <motion.button
-            onClick={onMembersClick}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 450, damping: 25 }}
-            className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors",
-            )}
-            style={{
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.09)",
-              color: "rgba(255,255,255,0.55)",
-            }}
-          >
-            <Users className="w-3.5 h-3.5" />
-            Members
-          </motion.button>
+        {/* ── Right side ────────────────────────────────────────────────────── */}
 
-          {/* Share — owner + admin only */}
-          {perms.canManageShareLink && (
+        {/* DESKTOP: full action row */}
+        {!isMobile && (
+          <div className="flex items-center gap-3 shrink-0">
+            {visibleMembers.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="flex -space-x-2.5">
+                  {visibleMembers.map((member, i) => (
+                    <motion.div
+                      key={member.user_id}
+                      initial={{ opacity: 0, scale: 0.7, x: 8 }}
+                      animate={{ opacity: 1, scale: 1, x: 0 }}
+                      transition={{ delay: i * 0.06, type: "spring", stiffness: 400, damping: 22 }}
+                      title={`${member.name} · ${boardRoleLabel(member.board_role)}`}
+                      className={cn(
+                        "w-8 h-8 rounded-full shrink-0",
+                        "flex items-center justify-center text-[9px] font-bold select-none cursor-default",
+                      )}
+                      style={{
+                        background: "oklch(0.38 0.16 285)",
+                        color: "oklch(0.88 0.08 285)",
+                        border: "2px solid oklch(0.13 0.015 265)",
+                        boxShadow: "0 0 0 1px rgba(255,255,255,0.06)",
+                      }}
+                    >
+                      {member.avatar_url ? (
+                        <img src={member.avatar_url} alt={member.name} className="w-full h-full rounded-full object-cover" />
+                      ) : (
+                        getInitials(member.name)
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+
+                {overflowCount > 0 && (
+                  <span className="text-[11px] font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    +{overflowCount} more
+                  </span>
+                )}
+
+                <span className="flex items-center gap-1 text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                  <Users className="w-2.75 h-2.75" />
+                  {board.members.length}
+                </span>
+              </div>
+            )}
+
+            <div className="w-px h-5 bg-white/8" />
+
+            {/* Archive */}
             <motion.button
-              onClick={onShareClick}
+              onClick={onArchiveClick}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ type: "spring", stiffness: 450, damping: 25 }}
+              className={cn(
+                "relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors",
+              )}
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.09)",
+                color: "rgba(255,255,255,0.55)",
+              }}
+            >
+              <ArchiveRestore className="w-3.5 h-3.5" />
+              Archive
+              {archivedCount !== undefined && archivedCount > 0 && (
+                <span
+                  className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center"
+                  style={{
+                    background: "oklch(0.42 0.09 198)",
+                    color: "oklch(0.91 0.015 265)",
+                    border: "1.5px solid oklch(0.155 0.016 265)",
+                  }}
+                >
+                  {archivedCount > 99 ? "99+" : archivedCount}
+                </span>
+              )}
+            </motion.button>
+
+            {/* Members */}
+            <motion.button
+              onClick={onMembersClick}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
               transition={{ type: "spring", stiffness: 450, damping: 25 }}
@@ -404,107 +410,306 @@ function BoardTopbar({
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors",
               )}
               style={{
-                background: "linear-gradient(135deg, oklch(0.82 0.14 198 / 0.15) 0%, oklch(0.42 0.09 198 / 0.10) 100%)",
-                border: "1px solid oklch(0.82 0.14 198 / 0.22)",
-                color: "oklch(0.82 0.14 198)",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.09)",
+                color: "rgba(255,255,255,0.55)",
               }}
             >
-              <Share2 className="w-3.5 h-3.5" />
-              Share
+              <Users className="w-3.5 h-3.5" />
+              Members
             </motion.button>
-          )}
 
-          {/* Board ⋯ menu */}
-          {hasAnyMenuItems && (
+            {/* Share — owner + admin only */}
+            {perms.canManageShareLink && (
+              <motion.button
+                onClick={onShareClick}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 450, damping: 25 }}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors",
+                )}
+                style={{
+                  background: "linear-gradient(135deg, oklch(0.82 0.14 198 / 0.15) 0%, oklch(0.42 0.09 198 / 0.10) 100%)",
+                  border: "1px solid oklch(0.82 0.14 198 / 0.22)",
+                  color: "oklch(0.82 0.14 198)",
+                }}
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Share
+              </motion.button>
+            )}
+
+            {/* Board ⋯ menu */}
+            {hasAnyMenuItems && (
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <motion.button
+                    whileHover={{ scale: 1.06 }}
+                    whileTap={{ scale: 0.94 }}
+                    transition={{ type: "spring", stiffness: 450, damping: 25 }}
+                    aria-label="Board options"
+                    className={cn(
+                      "w-9 h-9 flex items-center justify-center rounded-xl",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors",
+                    )}
+                    style={{
+                      background: menuOpen ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.05)",
+                      border: menuOpen ? "1px solid rgba(255,255,255,0.14)" : "1px solid rgba(255,255,255,0.07)",
+                      color: menuOpen ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.55)",
+                    }}
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </motion.button>
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent
+                  align="end"
+                  sideOffset={8}
+                  className="w-52"
+                  style={{
+                    background: "linear-gradient(160deg, oklch(0.19 0.018 265) 0%, oklch(0.16 0.014 265) 100%)",
+                    border: "1px solid rgba(255,255,255,0.09)",
+                    boxShadow: "0 16px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)",
+                    borderRadius: "0.875rem",
+                    padding: "6px",
+                  }}
+                >
+                  <DropdownMenuLabel
+                    className="text-[10px] font-bold uppercase tracking-widest px-2 pb-1 truncate max-w-[180px]"
+                    style={{ color: "rgba(255,255,255,0.28)" }}
+                  >
+                    Board settings
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+
+                  {perms.canRename && (
+                    <DropdownMenuItem
+                      onClick={openRename}
+                      className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                      style={{ color: "rgba(255,255,255,0.72)" }}
+                    >
+                      <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </div>
+                      Rename board
+                    </DropdownMenuItem>
+                  )}
+
+                  {perms.canChangeVisibility && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setMenuOpen(false);
+                        updateBoard({ visibility: board.visibility === "workspace" ? "private" : "workspace" });
+                      }}
+                      className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                      style={{ color: "rgba(255,255,255,0.72)" }}
+                    >
+                      <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
+                        {board.visibility === "workspace" ? <Lock className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+                      </div>
+                      Make {board.visibility === "workspace" ? "private" : "workspace"}
+                    </DropdownMenuItem>
+                  )}
+
+                  {perms.canDelete && (
+                    <>
+                      <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                      <DropdownMenuItem
+                        onClick={() => { setMenuOpen(false); setDeleteOpen(true); }}
+                        className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
+                        style={{ color: "rgba(239,68,68,0.85)" }}
+                      >
+                        <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(239,68,68,0.12)", color: "#EF4444" }}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </div>
+                        Delete board
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        )}
+
+        {/* MOBILE: collapsed into a single ⋯ overflow menu */}
+        {isMobile && (
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Mini member avatars */}
+            {visibleMembers.length > 0 && (
+              <div className="flex -space-x-2">
+                {visibleMembers.map((member, i) => (
+                  <div
+                    key={member.user_id}
+                    title={`${member.name} · ${boardRoleLabel(member.board_role)}`}
+                    className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[8px] font-bold select-none"
+                    style={{
+                      background: "oklch(0.38 0.16 285)",
+                      color: "oklch(0.88 0.08 285)",
+                      border: "2px solid oklch(0.13 0.015 265)",
+                    }}
+                  >
+                    {member.avatar_url ? (
+                      <img src={member.avatar_url} alt={member.name} className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      getInitials(member.name)
+                    )}
+                  </div>
+                ))}
+                {overflowCount > 0 && (
+                  <div
+                    className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[8px] font-bold"
+                    style={{
+                      background: "rgba(255,255,255,0.08)",
+                      border: "2px solid oklch(0.13 0.015 265)",
+                      color: "rgba(255,255,255,0.45)",
+                    }}
+                  >
+                    +{overflowCount}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Single ⋯ menu consolidating all actions */}
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <motion.button
-                  whileHover={{ scale: 1.06 }}
-                  whileTap={{ scale: 0.94 }}
+                  whileTap={{ scale: 0.92 }}
                   transition={{ type: "spring", stiffness: 450, damping: 25 }}
-                  aria-label="Board options"
-                  className={cn(
-                    "w-9 h-9 flex items-center justify-center rounded-xl",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors",
-                  )}
+                  aria-label="Board actions"
+                  className="w-10 h-10 flex items-center justify-center rounded-xl focus:outline-none"
                   style={{
-                    background: menuOpen ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.05)",
-                    border: menuOpen ? "1px solid rgba(255,255,255,0.14)" : "1px solid rgba(255,255,255,0.07)",
-                    color: menuOpen ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.55)",
+                    background: menuOpen ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.09)",
+                    color: "rgba(255,255,255,0.65)",
                   }}
                 >
-                  <MoreHorizontal className="w-4 h-4" />
+                  <MoreHorizontal className="w-4.5 h-4.5" />
                 </motion.button>
               </DropdownMenuTrigger>
 
               <DropdownMenuContent
                 align="end"
                 sideOffset={8}
-                className="w-52"
+                className="w-56"
                 style={{
                   background: "linear-gradient(160deg, oklch(0.19 0.018 265) 0%, oklch(0.16 0.014 265) 100%)",
                   border: "1px solid rgba(255,255,255,0.09)",
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)",
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.03)",
                   borderRadius: "0.875rem",
                   padding: "6px",
                 }}
               >
-                <DropdownMenuLabel
-                  className="text-[10px] font-bold uppercase tracking-widest px-2 pb-1 truncate max-w-[180px]"
-                  style={{ color: "rgba(255,255,255,0.28)" }}
+                {/* Archive */}
+                <DropdownMenuItem
+                  onClick={() => { setMenuOpen(false); onArchiveClick(); }}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-3 px-2"
+                  style={{ color: "rgba(255,255,255,0.72)" }}
                 >
-                  Board settings
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                  <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 relative" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
+                    <ArchiveRestore className="w-3.5 h-3.5" />
+                    {archivedCount !== undefined && archivedCount > 0 && (
+                      <span
+                        className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full text-[8px] font-bold flex items-center justify-center"
+                        style={{ background: "oklch(0.42 0.09 198)", color: "white" }}
+                      >
+                        {archivedCount > 9 ? "9+" : archivedCount}
+                      </span>
+                    )}
+                  </div>
+                  Archive{archivedCount ? ` (${archivedCount})` : ""}
+                </DropdownMenuItem>
 
-                {perms.canRename && (
+                {/* Members */}
+                <DropdownMenuItem
+                  onClick={() => { setMenuOpen(false); onMembersClick(); }}
+                  className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-3 px-2"
+                  style={{ color: "rgba(255,255,255,0.72)" }}
+                >
+                  <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
+                    <Users className="w-3.5 h-3.5" />
+                  </div>
+                  Members ({board.members.length})
+                </DropdownMenuItem>
+
+                {/* Share */}
+                {perms.canManageShareLink && (
                   <DropdownMenuItem
-                    onClick={openRename}
-                    className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
-                    style={{ color: "rgba(255,255,255,0.72)" }}
+                    onClick={() => { setMenuOpen(false); onShareClick(); }}
+                    className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-3 px-2"
+                    style={{ color: "oklch(0.82 0.14 198)" }}
                   >
-                    <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
-                      <Pencil className="w-3.5 h-3.5" />
+                    <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0" style={{ background: "oklch(0.82 0.14 198 / 0.12)", color: "oklch(0.82 0.14 198)" }}>
+                      <Share2 className="w-3.5 h-3.5" />
                     </div>
-                    Rename board
+                    Share board
                   </DropdownMenuItem>
                 )}
 
-                {perms.canChangeVisibility && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setMenuOpen(false);
-                      updateBoard({ visibility: board.visibility === "workspace" ? "private" : "workspace" });
-                    }}
-                    className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
-                    style={{ color: "rgba(255,255,255,0.72)" }}
-                  >
-                    <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
-                      {board.visibility === "workspace" ? <Lock className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
-                    </div>
-                    Make {board.visibility === "workspace" ? "private" : "workspace"}
-                  </DropdownMenuItem>
-                )}
-
-                {perms.canDelete && (
+                {/* Board settings */}
+                {hasAnyMenuItems && (
                   <>
                     <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
-                    <DropdownMenuItem
-                      onClick={() => { setMenuOpen(false); setDeleteOpen(true); }}
-                      className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-2.5 px-2"
-                      style={{ color: "rgba(239,68,68,0.85)" }}
+                    <DropdownMenuLabel
+                      className="text-[10px] font-bold uppercase tracking-widest px-2 pb-1"
+                      style={{ color: "rgba(255,255,255,0.28)" }}
                     >
-                      <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(239,68,68,0.12)", color: "#EF4444" }}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </div>
-                      Delete board
-                    </DropdownMenuItem>
+                      Board settings
+                    </DropdownMenuLabel>
+
+                    {perms.canRename && (
+                      <DropdownMenuItem
+                        onClick={openRename}
+                        className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-3 px-2"
+                        style={{ color: "rgba(255,255,255,0.72)" }}
+                      >
+                        <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </div>
+                        Rename board
+                      </DropdownMenuItem>
+                    )}
+
+                    {perms.canChangeVisibility && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setMenuOpen(false);
+                          updateBoard({ visibility: board.visibility === "workspace" ? "private" : "workspace" });
+                        }}
+                        className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-3 px-2"
+                        style={{ color: "rgba(255,255,255,0.72)" }}
+                      >
+                        <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)" }}>
+                          {board.visibility === "workspace" ? <Lock className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+                        </div>
+                        Make {board.visibility === "workspace" ? "private" : "workspace"}
+                      </DropdownMenuItem>
+                    )}
+
+                    {perms.canDelete && (
+                      <>
+                        <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                        <DropdownMenuItem
+                          onClick={() => { setMenuOpen(false); setDeleteOpen(true); }}
+                          className="gap-2.5 cursor-pointer rounded-lg text-[13px] font-medium py-3 px-2"
+                          style={{ color: "rgba(239,68,68,0.85)" }}
+                        >
+                          <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(239,68,68,0.12)", color: "#EF4444" }}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </div>
+                          Delete board
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </div>
+          </div>
+        )}
       </motion.header>
 
       {/* Rename dialog */}
@@ -811,7 +1016,7 @@ export function BoardPage() {
   const columns = board.columns;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: "oklch(0.12 0.015 265)" }}>
+    <div className="relative flex flex-col h-screen overflow-hidden" style={{ background: "oklch(0.12 0.015 265)" }}>
       {/* Dot-grid background */}
       <div
         className="absolute inset-0 pointer-events-none z-0"
@@ -858,7 +1063,18 @@ export function BoardPage() {
       />
 
       <main className="flex-1 overflow-x-auto overflow-y-hidden relative z-10">
-        <div className="flex gap-4 p-6 h-full items-start min-w-max">
+        {/*
+          min-width: max(100%, max-content)
+          — When columns are fewer than the viewport width: div expands to fill
+            100% so there's no dark gap on the right.
+          — When columns overflow the viewport: div grows to max-content so
+            horizontal scroll works exactly as before.
+          Replaces the old `min-w-max` which only did the second half.
+        */}
+        <div
+          className="flex gap-4 p-6 h-full items-start"
+          style={{ minWidth: "max(100%, max-content)" }}
+        >
           {columns.map((column, index) => (
             <Column
               key={column.id}

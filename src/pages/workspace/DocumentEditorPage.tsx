@@ -18,7 +18,20 @@
 //    its shared types on the doc — the only safe moment.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState, useMemo, useCallback, memo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, memo, useSyncExternalStore } from "react";
+
+// ── useIsMobile ───────────────────────────────────────────────────────────────
+function _subscribe(cb: () => void) {
+  const mql = window.matchMedia("(max-width: 767px)");
+  mql.addEventListener("change", cb);
+  return () => mql.removeEventListener("change", cb);
+}
+function _getSnapshot() {
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+function useIsMobile() {
+  return useSyncExternalStore(_subscribe, _getSnapshot, () => false);
+}
 import { useParams, useNavigate } from "react-router-dom";
 import { useAppSelector } from "@/store/hooks";
 import * as Y from "yjs";
@@ -181,6 +194,20 @@ function getWsBase(): string {
 .df-strike { text-decoration: line-through; }
 .df-underline { text-decoration: underline; }
 .df-inline-code { font-family: 'Geist Mono',ui-monospace,monospace; font-size: .85em; color: oklch(.82 .14 198); background: oklch(.18 .016 265); padding: .12em .4em; border-radius: 4px; border: 1px solid rgba(255,255,255,.07); }
+
+/* ── Mobile overrides (≤767px) ───────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .df-root { min-height: 30vh; }
+  .df-p  { font-size: 16px; }
+  .df-h1 { font-size: 1.6rem; }
+  .df-h2 { font-size: 1.25rem; }
+  .df-h3 { font-size: 1.05rem; }
+  .df-li { font-size: 16px; }
+  /* Larger tap targets for toolbar buttons on touch */
+  .df-toolbar-btn { width: 36px !important; height: 36px !important; }
+  /* Prevent iOS auto-zoom on focus (font-size must be ≥16px in inputs) */
+  .df-root { font-size: 16px; }
+}
 `;
   document.head.appendChild(el);
 })();
@@ -428,13 +455,16 @@ const CollaboratorAvatar = memo(
 
 function CollaboratorAvatars({
   provider,
+  isMobile = false,
 }: {
   provider: WebsocketProvider | null;
+  isMobile?: boolean;
 }) {
   const users = useAwarenessUsers(provider);
   if (users.length === 0) return null;
-  const visible = users.slice(0, MAX_VISIBLE);
-  const overflow = users.length - MAX_VISIBLE;
+  const maxVisible = isMobile ? 2 : MAX_VISIBLE;
+  const visible = users.slice(0, maxVisible);
+  const overflow = users.length - maxVisible;
   return (
     <div className="flex items-center">
       {visible.map((u, i) => (
@@ -466,7 +496,7 @@ function CollaboratorAvatars({
 // ConnectionBadge
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ConnectionBadge({ status }: { status: WsStatus }) {
+function ConnectionBadge({ status, isMobile = false }: { status: WsStatus; isMobile?: boolean }) {
   const cfg = {
     connected: {
       dot: "#34D399",
@@ -496,22 +526,27 @@ function ConnectionBadge({ status }: { status: WsStatus }) {
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.2 }}
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
+      className="flex items-center gap-1.5 rounded-full font-bold"
       style={{
+        padding: isMobile ? "5px 8px" : "4px 10px",
+        fontSize: isMobile ? "10px" : "11px",
         background: cfg.bg,
         border: `1px solid ${cfg.border}`,
         color: cfg.text,
       }}
     >
       <span
-        className="w-1.5 h-1.5 rounded-full shrink-0"
+        className="rounded-full shrink-0"
         style={{
+          width: "6px",
+          height: "6px",
           background: cfg.dot,
           animation:
             status === "connecting" ? "pulse 1.2s infinite" : undefined,
         }}
       />
-      {cfg.label}
+      {/* On mobile only show the dot — label is too wide next to avatars */}
+      {!isMobile && cfg.label}
     </motion.div>
   );
 }
@@ -604,10 +639,14 @@ function ToolbarPlugin() {
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.92 }}
         transition={{ type: "spring", stiffness: 500, damping: 25 }}
-        className="w-7 h-7 flex items-center justify-center rounded-lg focus:outline-none transition-colors"
+        // df-toolbar-btn class is targeted by the @media mobile rule
+        // to bump size to 36×36 px for fat-finger friendliness
+        className="df-toolbar-btn w-7 h-7 flex items-center justify-center rounded-lg focus:outline-none transition-colors"
         style={{
           background: active ? "rgba(255,255,255,0.12)" : "transparent",
           color: active ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.45)",
+          // Tells the browser we're handling taps — disables the 300 ms delay
+          touchAction: "manipulation",
         }}
         onMouseEnter={(e) =>
           Object.assign(e.currentTarget.style, {
@@ -638,11 +677,16 @@ function ToolbarPlugin() {
 
   return (
     <div
-      className="flex items-center gap-0.5 px-3 py-2 flex-wrap sticky top-0 z-10"
+      className="flex items-center gap-0.5 px-2 py-1.5 sticky top-0 z-10 overflow-x-auto"
       style={{
         background: "oklch(0.145 0.015 265)",
         borderBottom: "1px solid rgba(255,255,255,0.055)",
         backdropFilter: "blur(12px)",
+        // Prevent the scrollbar from appearing on desktop while still
+        // allowing horizontal scroll on mobile when the keyboard is up
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
+        WebkitOverflowScrolling: "touch",
       }}
     >
       <Btn
@@ -751,72 +795,86 @@ const EditorTopbar = memo(
     wsStatus: WsStatus;
     onBack: () => void;
     provider: WebsocketProvider | null;
-  }) => (
-    <motion.header
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="h-16 flex items-center justify-between px-5 shrink-0 relative z-40"
-      style={{
-        background: "oklch(0.13 0.015 265 / 0.92)",
-        backdropFilter: "blur(24px) saturate(180%)",
-        borderBottom: "1px solid rgba(255,255,255,0.055)",
-        boxShadow: "0 1px 0 rgba(0,218,243,0.06)",
-      }}
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        <motion.button
-          onClick={onBack}
-          aria-label="Back to board"
-          whileHover={{ scale: 1.06 }}
-          whileTap={{ scale: 0.94 }}
-          transition={{ type: "spring", stiffness: 450, damping: 25 }}
-          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 focus:outline-none"
-          style={{
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            color: "rgba(255,255,255,0.6)",
-          }}
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </motion.button>
+  }) => {
+    const isMobile = useIsMobile();
 
-        <div
-          className="w-px h-6 shrink-0"
-          style={{ background: "rgba(255,255,255,0.08)" }}
-        />
-
-        <div className="flex flex-col min-w-0">
-          <h1
-            className="font-bold text-[15px] tracking-tight truncate leading-tight"
+    return (
+      <motion.header
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="h-14 flex items-center justify-between shrink-0 relative z-40"
+        style={{
+          padding: isMobile ? "0 12px" : "0 20px",
+          background: "oklch(0.13 0.015 265 / 0.92)",
+          backdropFilter: "blur(24px) saturate(180%)",
+          borderBottom: "1px solid rgba(255,255,255,0.055)",
+          boxShadow: "0 1px 0 rgba(0,218,243,0.06)",
+        }}
+      >
+        {/* Left: back + title */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <motion.button
+            onClick={onBack}
+            aria-label="Back to board"
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.94 }}
+            transition={{ type: "spring", stiffness: 450, damping: 25 }}
+            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 focus:outline-none"
             style={{
-              color: "oklch(0.94 0.008 265)",
-              fontFamily: "var(--df-font-display)",
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              color: "rgba(255,255,255,0.6)",
+              // Critical: disables the 300 ms tap delay on iOS/Android
+              touchAction: "manipulation",
             }}
           >
-            {cardTitle}
-          </h1>
-          <p
-            className="text-[11px] mt-0.5"
-            style={{ color: "rgba(255,255,255,0.28)" }}
-          >
-            Document
-          </p>
-        </div>
-      </div>
+            <ArrowLeft className="w-4 h-4" />
+          </motion.button>
 
-      <div className="flex items-center gap-3 shrink-0">
-        <CollaboratorAvatars provider={provider} />
-        {provider && (
           <div
-            className="w-px h-5"
+            className="w-px h-6 shrink-0"
             style={{ background: "rgba(255,255,255,0.08)" }}
           />
-        )}
-        <ConnectionBadge status={wsStatus} />
-      </div>
-    </motion.header>
-  ),
+
+          <div className="flex flex-col min-w-0">
+            <h1
+              className="font-bold tracking-tight truncate leading-tight"
+              style={{
+                fontSize: isMobile ? "13px" : "15px",
+                color: "oklch(0.94 0.008 265)",
+                fontFamily: "var(--df-font-display)",
+                // Clamp title to viewport so it never pushes the right side off-screen
+                maxWidth: isMobile ? "calc(100vw - 180px)" : "none",
+              }}
+            >
+              {cardTitle}
+            </h1>
+            {!isMobile && (
+              <p
+                className="text-[11px] mt-0.5"
+                style={{ color: "rgba(255,255,255,0.28)" }}
+              >
+                Document
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Right: avatars + connection badge */}
+        <div className="flex items-center gap-2 shrink-0">
+          <CollaboratorAvatars provider={provider} isMobile={isMobile} />
+          {provider && (
+            <div
+              className="w-px h-5"
+              style={{ background: "rgba(255,255,255,0.08)" }}
+            />
+          )}
+          <ConnectionBadge status={wsStatus} isMobile={isMobile} />
+        </div>
+      </motion.header>
+    );
+  },
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -825,7 +883,7 @@ const EditorTopbar = memo(
 
 function EditorSkeleton() {
   return (
-    <div className="max-w-3xl mx-auto px-8 py-12 space-y-3">
+    <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8 sm:py-12 space-y-3">
       {[0.55, 1, 0.83, 0.91, 0.67, 0.78, 0.6].map((w, i) => (
         <motion.div
           key={i}
@@ -1035,7 +1093,7 @@ const CollaborativeLexicalEditor = memo(
           {/* Sticky toolbar */}
           <ToolbarPlugin />
 
-          <div className="max-w-3xl mx-auto px-8 py-10 relative">
+          <div className="max-w-3xl mx-auto px-4 sm:px-8 py-6 sm:py-10 relative">
             {/* Disconnected banner */}
             <AnimatePresence>
               {wsStatus === "disconnected" && (

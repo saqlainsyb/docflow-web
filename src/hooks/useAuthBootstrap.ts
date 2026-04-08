@@ -13,74 +13,71 @@ import type { User } from '@/lib/types'
 // screen or gets redirected to /login even though their session is valid.
 //
 // How it works:
-// 1. Call GET /users/me with the access token from Redux (null on fresh load)
-// 2. If it succeeds → user is logged in, dispatch setCredentials
-// 3. If it returns TOKEN_EXPIRED → the Axios interceptor in api.ts
-//    automatically calls /auth/refresh using the HttpOnly cookie,
-//    gets a new access token, retries /me, and if that succeeds
-//    the interceptor has already dispatched setAccessToken —
-//    so /me succeeds and we dispatch setCredentials with the user data
-// 4. If refresh also fails (cookie expired/missing) → dispatch clearCredentials
-//    and the app routes the user to /login normally
+// 1. Call GET /users/me — no access token in memory on fresh load, so this
+//    always returns 401/TOKEN_EXPIRED on a page refresh.
+// 2. The Axios interceptor in api.ts catches the 401, calls /auth/refresh
+//    using the HttpOnly cookie, gets a new access token, retries /me.
+// 3. If /me succeeds → dispatch setCredentials with the user + new token.
+// 4. If refresh fails (cookie expired/missing) → dispatch clearCredentials
+//    and the router redirects to /login.
 //
-// isBootstrapping: true until we know the auth state one way or the other.
-// The app renders nothing (or a spinner) while this is true to prevent
-// a flash of the login page for authenticated users.
+// Why the module-level promise:
+// React StrictMode intentionally mounts → unmounts → remounts every component
+// in development. This causes useEffect to fire twice, which would launch two
+// concurrent /users/me calls. Both would get 401, both would try to refresh —
+// the second refresh uses an already-rotated token and triggers
+// TOKEN_THEFT_DETECTED, logging the user out.
+//
+// The module-level `bootstrapPromise` ensures only one network call is ever
+// in flight, regardless of how many times the hook mounts. Both invocations
+// attach to the same promise and get the same result.
 
 interface UseAuthBootstrapResult {
   isBootstrapping: boolean
 }
+
+// Module-level — lives for the lifetime of the JS bundle, not the component.
+// Shared across StrictMode double-invocations and any other re-mounts.
+let bootstrapPromise: Promise<User | null> | null = null
 
 export function useAuthBootstrap(): UseAuthBootstrapResult {
   const dispatch = useAppDispatch()
   const [isBootstrapping, setIsBootstrapping] = useState(true)
 
   useEffect(() => {
-    let cancelled = false
+    // If a bootstrap is already in flight, attach to it instead of
+    // starting a new one. This is the StrictMode double-invoke guard.
+    if (!bootstrapPromise) {
+      bootstrapPromise = api
+        .get<User>('/users/me')
+        .then((res) => res.data)
+        .catch(() => null) // any failure = no valid session
+        .finally(() => {
+          // Clear so a future manual re-bootstrap (e.g. after logout+login)
+          // starts fresh rather than re-using a resolved promise.
+          bootstrapPromise = null
+        })
+    }
 
-    const bootstrap = async () => {
-      try {
-        // GET /users/me — if the access token is valid this returns immediately.
-        // If TOKEN_EXPIRED, api.ts intercepts the 401, silently calls /auth/refresh,
-        // gets a new access token, retries this request — all transparently.
-        const { data } = await api.get<User>('/users/me')
-
-        if (!cancelled) {
-          // /me succeeded (either directly or after a silent refresh)
-          // we need the access token that is now in Redux (may have been
-          // updated by the interceptor) to store alongside the user
-          dispatch(
-            setCredentials({
-              user: data,
-              // the interceptor already called setAccessToken if a refresh happened
-              // read the current value from the store rather than assuming null
-              access_token:
-                (api.defaults.headers.common['Authorization'] as string)?.replace(
-                  'Bearer ',
-                  '',
-                ) ?? '',
-            }),
-          )
-        }
-      } catch {
-        // /me failed and refresh also failed — no valid session
-        if (!cancelled) {
-          dispatch(clearCredentials())
-        }
-      } finally {
-        if (!cancelled) {
-          setIsBootstrapping(false)
-        }
+    bootstrapPromise.then((user) => {
+      if (user) {
+        dispatch(
+          setCredentials({
+            user,
+            // The interceptor called setAccessToken after the silent refresh —
+            // read it back from the Authorization header it set on the instance.
+            access_token:
+              (api.defaults.headers.common['Authorization'] as string)?.replace(
+                'Bearer ',
+                '',
+              ) ?? '',
+          }),
+        )
+      } else {
+        dispatch(clearCredentials())
       }
-    }
-
-    bootstrap()
-
-    // cleanup: if the component unmounts mid-request (rare but possible in
-    // StrictMode double-invoke), don't dispatch stale state updates
-    return () => {
-      cancelled = true
-    }
+      setIsBootstrapping(false)
+    })
   }, [dispatch])
 
   return { isBootstrapping }

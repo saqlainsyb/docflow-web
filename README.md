@@ -4,6 +4,9 @@ The React/TypeScript frontend for [Docflow](https://docflow.asia) — a real-tim
 
 **Live:** [docflow.asia](https://docflow.asia) · **Backend:** [docflow-core](https://github.com/saqlainsyb/docflow-core)
 
+![Docflow Kanban — real-time drag and drop](assets/kanban-demo.gif)
+![Docflow Document Editor — live presence cursors](assets/editor-demo.gif)
+
 ---
 
 ## Features
